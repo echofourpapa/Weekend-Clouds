@@ -60,6 +60,15 @@ machine — do not block on them unless a later step depends on the result.
 - [ ] P6.3 VDB→Gabor fitting tool
 - [ ] P6.4 Agility preview / DXR 1.2 / work graphs
 
+## Review notes (Phase 1 audit)
+- Phase 1 D3D12/HLSL audited: layouts, registers, barriers, math, ray reconstruction all verified
+  correct. Applied fixes: F2 (UnpackKernel comment now states R*local + generator round-trip rule),
+  F3 (march-diff bounds the reference by the farthest macro mean), F4 (skyParams.w documented as
+  cloudsActive; reproject accumulate flag must go elsewhere), F5 (cloud-depth SRV t12 registered).
+- F1 (depth SRV R32_FLOAT on typed D32 resource) is an ENGINE-WIDE condition — the deferred renderer
+  does the identical thing and the driver tolerates it. Do NOT patch only the cloud copy; a real fix
+  is R32_TYPELESS depth + D32 DSV across the engine. Left as-is.
+
 ## Deviations from spec
 (record any adaptation made when an anchor/contract in PLAN.md didn't match reality)
 

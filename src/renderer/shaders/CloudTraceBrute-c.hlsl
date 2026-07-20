@@ -28,6 +28,7 @@ COMPUTE_MAIN
     float tau = 0.0;
     float bestTau = 0.0;
     float bestT = 0.0;    // reservoir-lite: distance of the largest contributor
+    float farT = 0.0;     // farthest contributing mean (bounds the reference march)
 
     for (uint i = 0; i < macroCount; ++i)
     {
@@ -37,6 +38,7 @@ COMPUTE_MAIN
         float tk = TauKernelClamped(k.amplitude, t, 0.0, t0, t1);
         tau += max(tk, 0.0);
         if (tk > bestTau) { bestTau = tk; bestT = t.tbar; }
+        if (t.tbar > farT) farT = t.tbar;
     }
 
     float T = exp(-max(tau, 0.0));
@@ -57,7 +59,9 @@ COMPUTE_MAIN
     else if (dbg == CLOUD_DBG_MARCH_DIFF)
     {
         const int STEPS = 256;
-        float tEnd = min(t1, bestT > 0.0 ? bestT * 2.0 + 4000.0 : 8000.0);
+        // March must cover every macro's support so it matches the analytic sum
+        // over all macros (F3): bound by the farthest contributing mean.
+        float tEnd = min(t1, (farT > 0.0 ? farT : 4000.0) + 5000.0);
         float dt = max((tEnd - t0) / STEPS, 1e-3);
         float march = 0.0;
         for (int s = 0; s < STEPS; ++s)

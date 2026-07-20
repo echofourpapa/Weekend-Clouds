@@ -243,7 +243,7 @@ notation: `A: UAV→SRV` = `TransitionResource(A, D3D12_RESOURCE_STATE_UNORDERED
 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)` via the engine helper (anchor
 `"TransitionResource"` in `Awesome.cpp`).
 
-### 4.1 SkyLUT-c.hlsl — entry `main`, 8×8
+### 4.1 Sky*-c.hlsl + Cloud*-c.hlsl — entry `main`, 8×8
 Uniform-branch on a push value in `skyParams.z` (0 = transmittance pass, 1 = sky-view pass); two
 dispatches back-to-back with a UAV barrier when the sun/turbidity changed this frame (dirty flag).
 - Model: single-scattering Rayleigh+Mie, no ozone. Constants: βR=(5.802,13.558,33.1)e-6 m⁻¹,
@@ -540,7 +540,7 @@ steps that touch the same files.
   descriptor blocks from Assets section (extend `DescriptorHeap::AllocateBlock` with a section
   parameter if it lacks one — keep default behavior identical), empty Render. Wire into
   AwesomeGraphics (§6.1–6.2). Acceptance: grep all 5 wiring points + descriptor math comment.
-- [ ] **P1.3** `SkyAtmosphere.{h,cpp}` + `SkyLUT-c.hlsl` (§4.1); composite-lite: temporary
+- [ ] **P1.3** `SkyAtmosphere.{h,cpp}` + `Sky*-c.hlsl + Cloud*-c.hlsl` (§4.1); composite-lite: temporary
   `CloudComposite-c.hlsl` that ONLY paints sky+sun where depth==0 (no clouds yet), wired as the last
   cloud dispatch. Sun/IBL unification: time-of-day member drives `Scene::GetSunLight()` direction
   (anchor `"GetSunLight"` in `Scene.h`/`Scene.cpp`); sky-view→cubemap→IBL refresh is DEFERRED to
@@ -592,7 +592,7 @@ steps that touch the same files.
 
 ## 8. Verification harness
 
-- `tools/check_shaders.sh`: compiles every `src/renderer/shaders/Cloud*.hlsl` + `SkyLUT-c.hlsl`
+- `tools/check_shaders.sh`: compiles every `src/renderer/shaders/Cloud*.hlsl` + `Sky*-c.hlsl + Cloud*-c.hlsl`
   entry with DXC (`-T cs_6_8 -E main -I src/renderer/shaders -Wno-ignored-attributes`), each
   `#define` variant (`TRACE_BRUTE`, `TRACE_RQ`). Uses `dxc` from PATH or `tools/dxc/bin/dxc`;
   if unavailable, prints a LOUD warning and exits 0 (Windows build remains authoritative).

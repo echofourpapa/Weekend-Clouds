@@ -54,7 +54,9 @@ cbuffer CloudConstants : register(b0)
     float4   g_ambientParams;  // x ambientStrength, y groundAlbedo, z cloudBaseY, w cloudTopY
     uint4    g_mode;           // x debugView, y lightMode, z traversalMode, w frameIndex
     float4   g_temporal;       // x alphaBase, y disocclusionTauDelta, z accumCount, w histBlendMax
-    float4   g_skyParams;      // x turbidity, y groundOffsetKm, z lutPass, w flags (bit0 accumulate)
+    float4   g_skyParams;      // x turbidity, y groundOffsetKm, z lutPass, w cloudsActive (0/1)
+                               // NOTE: Phase 5 reproject accumulate flag must NOT reuse .w
+                               // (put it in a temporal.* field or a mode bit).
     uint4    g_genParams;      // x seed, y kernelsPerMacroPerOctave, z octaveCount, w cacheSliceIndex
     float4   g_erosionParams;  // x erosionBoundK, y detailPosClampSigma, z minSigmaM, w maxSigmaM
 };

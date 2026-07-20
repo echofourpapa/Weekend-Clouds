@@ -192,6 +192,8 @@ bool CloudSystem::StartUp()
         srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
         WriteSRV(SRV_Scatter, m_scatterTex, &srv);
+        srv.Format = DXGI_FORMAT_R16_FLOAT;
+        WriteSRV(SRV_CloudDepth, m_cloudDepthTex, &srv);   // consumed by Phase 5 reproject
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC uav = {};
         uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;

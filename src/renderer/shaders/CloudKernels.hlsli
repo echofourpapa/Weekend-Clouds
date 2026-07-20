@@ -91,7 +91,9 @@ CloudKernel UnpackKernel(CloudKernelPacked p, CloudMacro parent)
     float3 parentRow0, parentRow1, parentRow2;
     QuatToRows(float4(UnpackSnorm16x2(parent.quatXY), UnpackSnorm16x2(parent.quatZW)), parentRow0, parentRow1, parentRow2);
     float3 local = float3(pxy, pz) * (4.0 * parent.sigma);
-    // rows map world->kernel; transpose (columns) maps kernel->world
+    // Active rotation kernel->world: this column-combination is R*local =
+    // rotate(parentQuat, local) (PLAN 3.1). The Phase-3 generator must therefore
+    // store local = R^T * (childPos - parentPos) / (4*sigma) to round-trip.
     k.posWS = parent.position
             + float3(parentRow0.x, parentRow1.x, parentRow2.x) * local.x
             + float3(parentRow0.y, parentRow1.y, parentRow2.y) * local.y
