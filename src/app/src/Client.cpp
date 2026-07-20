@@ -784,6 +784,14 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                             Awesome.GetClouds()->m_traversalMode = (uint32)trav;
                     }
                     {
+                        // 0 = sun-transmittance field cache (real self-shadowing),
+                        // 3 = height/powder heuristic fallback.
+                        const char* litItems[] = { "Sun Cache", "Heuristic" };
+                        int lit = Awesome.GetClouds()->m_lightMode == 0 ? 0 : 1;
+                        if (ImGui::Combo("Lighting", &lit, litItems, IM_ARRAYSIZE(litItems)))
+                            Awesome.GetClouds()->m_lightMode = (lit == 0) ? 0u : 3u;
+                    }
+                    {
                         const char* dbgItems[] = { "Off", "Heatmap", "Freq Bands", "Transmittance",
                             "Cloud Depth", "Analytic vs March", "Baked vs Ref", "Mask Rate",
                             "History Reject", "Min Tau", "Tile Count", "Cache Slice" };
