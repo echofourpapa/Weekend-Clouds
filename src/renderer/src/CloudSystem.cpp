@@ -2,6 +2,7 @@
 #include "CloudShaderCompiler.h"
 #include "SkyAtmosphere.h"
 #include "CloudGenerator.h"
+#include "CloudLighting.h"
 #include "Awesome.h"
 #include "Compute.h"
 #include "Deferred.h"
@@ -19,11 +20,13 @@ CloudSystem::CloudSystem(AwesomeGraphics* Awesome)
     , m_shaderCompiler(new CloudShaderCompiler(Awesome))
     , m_sky(new SkyAtmosphere(Awesome, this))
     , m_generator(new CloudGenerator(Awesome, this))
+    , m_lighting(new CloudLighting(Awesome, this))
 {
 }
 
 CloudSystem::~CloudSystem()
 {
+    delete m_lighting;
     delete m_generator;
     delete m_sky;
     delete m_shaderCompiler;
@@ -177,6 +180,8 @@ bool CloudSystem::StartUp()
         return false;
     if (!m_generator->StartUp())
         return false;
+    if (!m_lighting->StartUp())
+        return false;
 
     // Trace targets (P1.4 is full-res; P5 moves the trace to 1280x720). Sized to
     // the current window; a window resize is not yet handled for cloud targets.
@@ -256,6 +261,7 @@ bool CloudSystem::StartUp()
 
 bool CloudSystem::TearDown()
 {
+    m_lighting->TearDown();
     m_generator->TearDown();
     m_sky->TearDown();
     SafeRelease(m_scatterTex);
@@ -345,6 +351,17 @@ void CloudSystem::UpdateConstants(float delta)
     float cloudsActive = macroCount > 0 ? 1.0f : 0.0f;
     m_constants.skyParams = { m_turbidity, 0.0f, 0.0f, cloudsActive };
 
+    // Light-cache box: cubic 256 m voxels centred on the camera in macro space
+    // (camPos + windOffset), XZ snapped to the voxel grid; Y from ground up.
+    const float voxel = 256.0f;
+    float mcx = cam->transform.position.x + m_constants.windOffset.x;
+    float mcz = cam->transform.position.z + m_constants.windOffset.z;
+    float ox = floorf(mcx / voxel) * voxel - (CloudLighting::c_dimX / 2) * voxel;
+    float oz = floorf(mcz / voxel) * voxel - (CloudLighting::c_dimZ / 2) * voxel;
+    m_constants.cacheOriginWS = { ox, 0.0f, oz, 1.0f / voxel };
+    m_cacheSlice = (m_cacheSlice + 1) % (CloudLighting::c_dimZ / CloudLighting::c_slabZ);
+    m_constants.genParams[3] = m_cacheSlice;
+
     memcpy(m_constantMapped[m_Awesome->GetCurrentFrameIndex()], &m_constants, sizeof(CloudConstants));
 
     // Dirty the sky when the sun elevation changes appreciably.
@@ -402,6 +419,13 @@ void CloudSystem::Render(float delta)
     {
         PIXScopedEvent(m_Awesome->GetCommandList(), 0, "Cloud Sky");
         m_sky->Render();
+    }
+
+    // Sun-transmittance field cache: refresh one Z-slab per frame (analytic).
+    if (m_generator->GetMacroCount() > 0)
+    {
+        PIXScopedEvent(m_Awesome->GetCommandList(), 0, "Cloud Light Cache");
+        m_lighting->Build();
     }
 
     // Scene depth is read as an SRV by both the trace and the composite; move it

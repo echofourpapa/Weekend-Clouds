@@ -11,6 +11,7 @@ namespace Awesome
     class CloudShaderCompiler;
     class SkyAtmosphere;
     class CloudGenerator;
+    class CloudLighting;
 
     // Shared descriptor-table slot assignments (docs/PLAN.md 3.5). Every cloud
     // pass binds the full SRV + UAV tables; a pass only touches the slots it needs.
@@ -109,6 +110,8 @@ namespace Awesome
         CloudShaderCompiler* m_shaderCompiler;
         SkyAtmosphere* m_sky;
         CloudGenerator* m_generator;
+        CloudLighting* m_lighting;
+        uint32 m_cacheSlice = 0;
 
         ID3D12RootSignature* m_rootSignature = nullptr;
         ID3D12Resource* m_scatterTex = nullptr;    // RGBA16F: rgb inscatter, a transmittance

@@ -55,11 +55,13 @@ machine — do not block on them unless a later step depends on the result.
 - [x] P4.0 Approximate lighting (Beer-powder + height gradient + sky ambient) — no new infra, makes
       clouds read as 3D. Placeholder until the field cache lands.
 - [ ] P4.1 Static-camera accumulation mode (needed once trace is stochastic / half-res)
-- [ ] P4.2 CloudLighting + sun-channel field cache (3D tex; needs a macro grid for the per-voxel sun
-      integration) + trace consumption. This replaces P4.0's heuristic with real self-shadowing.
-      NOTE: generation is CPU now, so the macro grid can be built CPU-side and uploaded alongside the
-      macro buffer (simplest); the cache build shader marches the grid toward the sun. Consider a
-      density-froxel hybrid if the analytic per-voxel sun march proves too costly.
+- [x] P4.2 CloudLighting + sun-transmittance field cache (128x32x128 R16F 3D texture) + trace
+      consumption (lightMode 0). No macro grid needed: per voxel the cache sums the closed-form
+      optical depth of every macro along the sun ray with a cheap perpendicular-distance reject, so
+      only nearby macros pay the erf cost. Rebuilt one Z-slab/frame (full refresh in 16 frames).
+      Trace samples it trilinearly at o+bestT*dir (macro space) → Wrenninge multi-octave scatter.
+      Cache box: cubic 256 m voxels centred on camera-in-macro-space, XZ snapped. lightMode!=0 keeps
+      the P4.0 height heuristic as fallback.
 - [ ] P4.3 Six-way variant + RT-reference mode (needs RTScene from P2.3) + baked-vs-reference diff
 - [ ] P4.4 Sky→cubemap→IBL refresh + exposure clamp
 

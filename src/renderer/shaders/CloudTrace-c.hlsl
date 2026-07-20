@@ -4,7 +4,7 @@
 // pixel-for-pixel (regression gate). Detail Gabor kernels + groupshared staging
 // arrive in Phase 3 / Phase 5. Shares the closed-form math in CloudKernels.hlsli.
 
-#include "CloudKernels.hlsli"
+#include "CloudLighting.hlsli"
 
 StructuredBuffer<CloudKernelPacked> g_kernels : register(t0);
 StructuredBuffer<CloudMacro>        g_macros  : register(t1);
@@ -13,6 +13,7 @@ struct CloudTile { uint count; uint pad0, pad1, pad2; uint macroIdx[CLOUD_MAX_TI
 StructuredBuffer<CloudTile> g_tiles : register(t2);
 
 Texture2D<float>    g_sceneDepth : register(t6);
+Texture3D<float>    g_lightCache : register(t8);
 RWTexture2D<float4> g_scatter    : register(u7);
 RWTexture2D<float>  g_cloudDepth : register(u8);
 
@@ -69,15 +70,23 @@ COMPUTE_MAIN
     float tauC = max(tau, 0.0);
     float T = exp(-tauC);
 
-    // Approximate lighting (P4.0, no shadow cache yet): Beer-powder edge
-    // darkening + a vertical gradient (bright tops / dark bases) + sky ambient.
-    // Physically-correct self-shadowing (analytic sun transmittance from a field
-    // cache) is P4.2.
     float cosVS = dot(dir, normalize(g_sunDirWS.xyz));
-    float phase = PhaseDualHG(cosVS);
     float powder = 1.0 - exp(-2.0 * tauC);                 // dark cores/edges
-    float lightGrad = lerp(0.25, 1.0, saturate(bestHeight));
-    float3 sunLit = g_sunRadiance.rgb * phase * powder * lightGrad;
+    float3 sunLit;
+    if (g_mode.y == CLOUD_LIGHT_SUNCACHE)
+    {
+        // Real self-shadowing: sample the sun-transmittance field cache at the
+        // scatter point (o already includes windOffset, i.e. macro space).
+        float3 scatterWS = o + dir * bestT;
+        float tauSun = SampleSunTau(g_lightCache, scatterWS);
+        sunLit = CloudSunScatter(tauSun, cosVS) * powder;
+    }
+    else
+    {
+        // Fallback heuristic (no cache): height gradient + powder.
+        float phase = PhaseDualHG(cosVS);
+        sunLit = g_sunRadiance.rgb * phase * powder * lerp(0.25, 1.0, saturate(bestHeight));
+    }
     float3 skyAmb = float3(0.30, 0.45, 0.65) * g_ambientParams.x * (0.4 + 0.6 * saturate(bestHeight));
     float3 inscatter = (1.0 - T) * (sunLit + skyAmb);
 
