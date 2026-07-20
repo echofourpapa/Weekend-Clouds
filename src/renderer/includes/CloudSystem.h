@@ -99,6 +99,7 @@ namespace Awesome
         float m_windDir = 30.0f;      // degrees
         float m_maskAggressiveness = 1.0f;   // 1 = masking off; higher = more culling
         float m_survivalFloor = 0.05f;
+        float m_temporalAlpha = 0.1f;         // temporal blend (lower = steadier, slower)
         uint32 m_debugView = 0;
         uint32 m_lightMode = 0;
         uint32 m_traversalMode = 0;   // 0 tiled (primary), 3 brute (A/B)

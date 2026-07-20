@@ -354,7 +354,7 @@ void CloudSystem::UpdateConstants(float delta)
     m_constants.lodParams = { 2.0f * tanf(cam->verticalFOV * 0.5f) / th, 0.02f, m_maskAggressiveness, m_survivalFloor };
     m_constants.erosionParams = { 0.7f, 4.0f, 20.0f, 2000.0f };
     // temporal: alphaBase, disocclusionTauDelta, accumCount(unused), histBlendMax
-    m_constants.temporal = { 0.1f, 0.15f, 0.0f, 1.0f };
+    m_constants.temporal = { m_temporalAlpha, 0.15f, 0.0f, 1.0f };
     uint32 macroCount = m_generator->GetMacroCount();
     m_constants.counts[0] = macroCount;
     m_constants.counts[1] = m_generator->GetKernelCount();

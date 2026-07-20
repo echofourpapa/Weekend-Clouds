@@ -74,8 +74,13 @@ machine — do not block on them unless a later step depends on the result.
       disocclusion. Composite reads the reprojected result (t13). t9=prev / u10=cur / t13=cur-for-
       composite written per-frame into the [f][0] block (safe: block fenced 3 frames back).
 - [ ] P5.2c Spatial denoise (a-trous bilateral) before temporal — only if masking noise needs it.
-- [ ] P5.3 TAA sky fix (camera-only reprojection for depth==0 pixels)
-- [ ] P5.4 Perf tuning + acceptance-ladder verdict at 2560x1440 (record here + README)
+- [ ] P5.3 TAA sky fix (camera-only reprojection for depth==0 pixels) — DEFERRED (low impact: clouds
+      already stabilised by their own reproject, and the sky gradient is smooth so TAA's variance clip
+      barely touches it; the fix needs current/prev matrices added to the engine TAA constant buffer).
+- [ ] P5.4 Perf tuning + acceptance-ladder verdict at 2560x1440 — USER-driven (needs Windows profiler
+      numbers). Knobs exposed: Mask Aggressiveness, Survival Floor, Temporal Blend, Kernels/Macro,
+      Octaves; m_traceScale (2=half, 4=quarter, StartUp-time). Profiler scopes: Cloud Light Cache /
+      Trace / Reproject / Composite (plus Sky, Bin via PIX). (record here + README)
 
 ## Phase 6 — stretch (optional)
 - [ ] P6.1 In-register kernel synthesis A/B
