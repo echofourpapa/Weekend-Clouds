@@ -11,7 +11,8 @@ machine — do not block on them unless a later step depends on the result.
       tools/check_shaders.sh, README build notes
 - [x] P0.2 Aftermath opt-in premake option + DXC DLL postbuild copy (USER: verify fresh-clone
       build without thirdparty/aftermath)
-- [ ] P0.3 Device5/CommandList4 QI + CheckFeatureSupport (RT tier, SM, typed UAV loads) + caps readout
+- [x] P0.3 Device5/CommandList4 QI + CheckFeatureSupport (RT tier, SM, typed UAV loads) + caps readout
+      (Info panel, ImGui)
 - [ ] P0.4 CloudShaderCompiler (DXC hot reload, Debug-only) + ImGui reload button
 
 ## Phase 1 — sky + scaffold + brute force
@@ -57,3 +58,5 @@ machine — do not block on them unless a later step depends on the result.
 
 - P0.2: fresh clone + `premake5 vs2022` + build x64 Debug WITHOUT thirdparty/aftermath present;
   expect link success; after a NuGet restore + rebuild, dxcompiler.dll/dxil.dll appear in bin/Debug
+- P0.3: run the app, open the Info panel — expect "RT tier 1.1 | SM 6.8 | R11G11B10 UAV loads yes"
+  on the 4070

@@ -367,6 +367,27 @@ bool AwesomeGraphics::StartUp()
     if (D3D12CreateDevice(NULL, featureLevel, IID_PPV_ARGS(&m_device)) != S_OK)
         return false;
 
+    // Capability queries for the cloud renderer (docs/PLAN.md P0.3). All optional:
+    // the primary cloud path is plain compute; RayQuery-based paths check m_rtSupported.
+    if (FAILED(m_device->QueryInterface(IID_PPV_ARGS(&m_device5))))
+        m_device5 = nullptr;
+
+    D3D12_FEATURE_DATA_D3D12_OPTIONS5 opts5 = {};
+    if (SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &opts5, sizeof(opts5))))
+        m_rtTier = (uint32)opts5.RaytracingTier;
+    m_rtSupported = m_device5 != nullptr && m_rtTier >= (uint32)D3D12_RAYTRACING_TIER_1_1;
+
+    D3D12_FEATURE_DATA_SHADER_MODEL sm = { D3D_SHADER_MODEL_6_8 };
+    if (SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &sm, sizeof(sm))))
+        m_shaderModel = (uint32)sm.HighestShaderModel;
+
+    D3D12_FEATURE_DATA_FORMAT_SUPPORT r11 = { DXGI_FORMAT_R11G11B10_FLOAT };
+    if (SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &r11, sizeof(r11))))
+        m_typedUAVLoads = (r11.Support2 & D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD) != 0;
+
+    DebugPrint("D3D12 caps: RT tier %u, SM 0x%x, R11G11B10 typed UAV loads %d\n",
+        m_rtTier, m_shaderModel, (int)m_typedUAVLoads);
+
     // [DEBUG] Setup debug interface to break on any warnings/errors
 #ifdef DX12_ENABLE_DEBUG_LAYER
     if (pdx12Debug != NULL)
@@ -477,6 +498,10 @@ bool AwesomeGraphics::StartUp()
         if (FAILED(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator[0], NULL, IID_PPV_ARGS(&m_commandList[i]))))
             return false;
         m_commandList[i]->Close();
+
+        // Needed for BuildRaytracingAccelerationStructure; null is fine (RQ paths check).
+        if (FAILED(m_commandList[i]->QueryInterface(IID_PPV_ARGS(&m_commandList4[i]))))
+            m_commandList4[i] = nullptr;
     }
 
 
@@ -559,6 +584,7 @@ void AwesomeGraphics::TearDown()
 
     ReleaseTempResources();
 
+    SafeRelease(m_device5);
     SafeRelease(m_device);
     SafeRelease(m_adapter);
     SafeRelease(m_swapChain);
@@ -566,12 +592,13 @@ void AwesomeGraphics::TearDown()
     SafeRelease(m_rtvDescHeap);
     SafeRelease(m_dsDescHeap);
     SafeRelease(m_mainCbvSrvUavDescHeap);
-    
+
     for (uint16 i = 0; i < c_frameBufferCount; ++i)
     {
         SafeRelease(m_depthStencilBuffer[i]);
         SafeRelease(m_renderTargets[i]);
         SafeRelease(m_commandAllocator[i]);
+        SafeRelease(m_commandList4[i]);
         SafeRelease(m_commandList[i]);
     }
     
@@ -1224,6 +1251,11 @@ void AwesomeGraphics::TransitionResource(ID3D12Resource* resource, D3D12_RESOURC
 }
 
 ID3D12Device* AwesomeGraphics::Device() const { return m_device; }
+
+ID3D12GraphicsCommandList4* AwesomeGraphics::GetCommandList4() const
+{
+    return m_commandList4[m_frameIndex];
+}
 
 ID3D12GraphicsCommandList* AwesomeGraphics::GetCommandList() const
 {

@@ -73,8 +73,15 @@ namespace Awesome
         void TransitionResource(ID3D12Resource* resource, D3D12_RESOURCE_STATES prevState, D3D12_RESOURCE_STATES nexState);
 
         ID3D12Device* Device() const;
+        ID3D12Device5* Device5() const { return m_device5; } // null when the runtime lacks it
 
         ID3D12GraphicsCommandList* GetCommandList() const;
+        ID3D12GraphicsCommandList4* GetCommandList4() const; // null when the runtime lacks it
+
+        bool IsRaytracingSupported() const { return m_rtSupported; }
+        bool AreTypedUAVLoadsSupported() const { return m_typedUAVLoads; }
+        uint32 GetRaytracingTier() const { return m_rtTier; }
+        uint32 GetHighestShaderModel() const { return m_shaderModel; }
         ID3D12CommandQueue* GetCommandQueue() const;
         const D3D12_VIEWPORT* GetViewport() const;
         const D3D12_RECT* GetScissorRect() const;
@@ -211,6 +218,11 @@ namespace Awesome
 
         // Device stuff
         ID3D12Device* m_device;
+        ID3D12Device5* m_device5 = nullptr;
+        bool m_rtSupported = false;
+        bool m_typedUAVLoads = false;
+        uint32 m_rtTier = 0;       // D3D12_RAYTRACING_TIER value
+        uint32 m_shaderModel = 0;  // D3D_SHADER_MODEL value (0x68 = SM 6.8)
         IDXGIAdapter3* m_adapter;
         // Render Stuff
         IDXGISwapChain3* m_swapChain;
@@ -224,6 +236,7 @@ namespace Awesome
         // Command Stuff
         ID3D12CommandQueue* m_commandQueue;
         ID3D12GraphicsCommandList* m_commandList[c_frameBufferCount];
+        ID3D12GraphicsCommandList4* m_commandList4[c_frameBufferCount] = {};
         ID3D12CommandAllocator* m_commandAllocator[c_frameBufferCount];
 
         // Fence stuff

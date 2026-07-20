@@ -442,6 +442,10 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                         float totalMem = Awesome.GetTotalMemory();
                         ImGui::Text("GPU memory usage %.3f mb/%.3f mb", currentMem, totalMem);
                     }
+                    ImGui::Text("D3D12 caps: RT tier %u.%u | SM %u.%u | R11G11B10 UAV loads %s",
+                        Awesome.GetRaytracingTier() / 10, Awesome.GetRaytracingTier() % 10,
+                        Awesome.GetHighestShaderModel() >> 4, Awesome.GetHighestShaderModel() & 0xF,
+                        Awesome.AreTypedUAVLoadsSupported() ? "yes" : "NO");
                     ImGui::Separator();
                     ImGui::Text("Profiler Name : Current MS | Average MS");
                     std::vector<Awesome::ProfileData> profileData;
