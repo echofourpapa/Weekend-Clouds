@@ -78,13 +78,21 @@ machine — do not block on them unless a later step depends on the result.
 - [ ] P6.4 Agility preview / DXR 1.2 / work graphs
 
 ## Review notes (Phase 2-3)
-- The highest-risk Phase 3 item — the 32-byte kernel CPU-pack (CloudGenerator.cpp) vs HLSL-unpack
-  (CloudKernels.hlsli) — is validated by tools/validate_math.py `check_packing` (mirrors both sides,
-  round-trips flags/quat/sigma/amp/freq/phase/seed within tolerance). A broader Phase 2-3 D3D12/HLSL
-  audit was started but not completed (session limit); re-run it when resuming (see the launch prompt
-  pattern used for the Phase 1 audit). Focus areas: binning frustum signs, tile-index agreement,
-  EnsureUploaded re-upload states, wind advection consistency (binning -windOffset vs trace
-  +windOffset).
+- Full Phase 2-3 audit complete. Found ONE crash-class bug (now fixed): EnsureUploaded reused the
+  DEFAULT buffer's full-capacity/UAV-flagged desc for AwesomeGraphics::UploadBuffer, causing an OOB
+  read (copy sized from full capacity, not actual count) AND an illegal ALLOW_UNORDERED_ACCESS flag
+  on the UPLOAD staging heap (E_INVALIDARG -> null deref). Fixed by building a fresh desc with the
+  actual byte Width and FLAG_NONE for both macro and kernel uploads. This latent crash existed since
+  P1.4; it would have crashed on the first frame.
+- Everything else verified CORRECT and must not be "fixed": CloudTile layout/stride, tile-index
+  agreement, binning frustum signs (conservative, never drops a visible macro), the wind-advection
+  algebra (bin -windOffset vs trace +windOffset place the field identically; geometry clamp exact),
+  the kernel pack field assignments, fixed-slot indexing + caps, register bindings, resource-state
+  balance (incl. the m_inReadState re-upload path), signed-tau accumulation.
+- Deferred minor items: PSO permutation arrays leak once at StartUp (matches the engine's GTAO
+  pattern; negligible); tile-overflow stat (macroCountBuf[2]) not written (debug HUD only).
+- The kernel pack/unpack round-trip is also independently validated by tools/validate_math.py
+  check_packing.
 
 ## Review notes (Phase 1 audit)
 - Phase 1 D3D12/HLSL audited: layouts, registers, barriers, math, ray reconstruction all verified

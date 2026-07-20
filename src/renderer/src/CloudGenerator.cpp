@@ -221,14 +221,23 @@ void CloudGenerator::EnsureUploaded()
         m_Awesome->TransitionResource(m_kernelBuf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
     }
 
+    // AwesomeGraphics::UploadBuffer wants a desc whose Width is the ACTUAL byte
+    // count and whose Flags are NONE (an UPLOAD staging heap cannot carry
+    // ALLOW_UNORDERED_ACCESS, and GetCopyableFootprints sizes the copy from
+    // Width). Reusing the DEFAULT buffer's full-capacity/UAV desc read past the
+    // source vector and failed the staging-heap creation. Build a fresh desc.
     D3D12_RESOURCE_DESC md = m_macroBuf->GetDesc();
-    m_Awesome->UploadBuffer(m_macroBuf, md, (uint64)m_cpuMacros.size() * sizeof(CloudMacro), (const uint8*)m_cpuMacros.data());
+    md.Width = (uint64)m_cpuMacros.size() * sizeof(CloudMacro);
+    md.Flags = D3D12_RESOURCE_FLAG_NONE;
+    m_Awesome->UploadBuffer(m_macroBuf, md, md.Width, (const uint8*)m_cpuMacros.data());
     m_Awesome->TransitionResource(m_macroBuf, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
     if (!m_cpuKernels.empty())
     {
         D3D12_RESOURCE_DESC kd = m_kernelBuf->GetDesc();
-        m_Awesome->UploadBuffer(m_kernelBuf, kd, (uint64)m_cpuKernels.size() * sizeof(CloudKernelPacked), (const uint8*)m_cpuKernels.data());
+        kd.Width = (uint64)m_cpuKernels.size() * sizeof(CloudKernelPacked);
+        kd.Flags = D3D12_RESOURCE_FLAG_NONE;
+        m_Awesome->UploadBuffer(m_kernelBuf, kd, kd.Width, (const uint8*)m_cpuKernels.data());
     }
     m_Awesome->TransitionResource(m_kernelBuf, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     m_uploaded = true;
