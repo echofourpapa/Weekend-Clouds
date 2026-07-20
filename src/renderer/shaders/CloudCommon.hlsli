@@ -126,4 +126,41 @@ float PhaseDualHG(float cosTheta)
     return lerp(PhaseHG(cosTheta, g_scatterParams.y), PhaseHG(cosTheta, g_scatterParams.x), g_scatterParams.z);
 }
 
+// ---------------------------------------------------------------------------
+// Sky-view LUT sampling (mirror of SkyLUT-c.hlsl pass 1 parameterisation)
+// ---------------------------------------------------------------------------
+
+float2 SkyViewUV(float3 viewDir)
+{
+    float3 sunDir = normalize(g_sunDirWS.xyz);
+    float3 up = float3(0, 1, 0);
+    float3 sunAz = normalize(sunDir - up * dot(sunDir, up));
+    if (length(sunAz) < 1e-3) sunAz = float3(1, 0, 0);
+    float3 sunRight = normalize(cross(up, sunAz));
+
+    float elevation = asin(clamp(viewDir.y, -1.0, 1.0));
+    float az = atan2(dot(viewDir, sunRight), dot(viewDir, sunAz));
+
+    float u = az / 3.14159265 * 0.5 + 0.5;
+    float e = elevation / (3.14159265 * 0.5);
+    float v = (sign(e) * sqrt(abs(e))) * 0.5 + 0.5;
+    return float2(u, v);
+}
+
+float3 SampleSkyView(Texture2D<float4> lut, float3 viewDir)
+{
+    return lut.SampleLevel(linearClampSampler, SkyViewUV(viewDir), 0).rgb;
+}
+
+// Analytic sun disc (added on top of the sky-view LUT; radius in g_sunDirWS.w).
+float3 SunDisc(float3 viewDir)
+{
+    float c = dot(viewDir, normalize(g_sunDirWS.xyz));
+    float cosR = cos(g_sunDirWS.w);
+    if (c < cosR) return float3(0, 0, 0);
+    float edge = saturate((c - cosR) / max(1.0 - cosR, 1e-6));
+    float limb = pow(edge, 0.6);
+    return g_sunRadiance.rgb * limb * 40.0;
+}
+
 #endif

@@ -10,7 +10,7 @@ if command -v dxc >/dev/null 2>&1; then DXC=dxc;
 elif [ -x tools/dxc/bin/dxc ]; then DXC=tools/dxc/bin/dxc; fi
 
 SHADER_DIR=src/renderer/shaders
-mapfile -t FILES < <(ls "$SHADER_DIR"/Cloud*-c.hlsl "$SHADER_DIR"/SkyLUT-c.hlsl 2>/dev/null)
+mapfile -t FILES < <(ls "$SHADER_DIR"/Cloud*-c.hlsl "$SHADER_DIR"/Sky*-c.hlsl 2>/dev/null)
 
 if [ ${#FILES[@]} -eq 0 ]; then
     echo "check_shaders: no cloud shaders exist yet — nothing to check."

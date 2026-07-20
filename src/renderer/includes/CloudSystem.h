@@ -9,36 +9,51 @@ namespace Awesome
 {
     class AwesomeGraphics;
     class CloudShaderCompiler;
+    class SkyAtmosphere;
 
-    // CPU mirror of the CloudConstants cbuffer in CloudCommon.hlsli.
-    // Field order and packing are a contract (docs/PLAN.md 3.4) - change both or neither.
+    // Shared descriptor-table slot assignments (docs/PLAN.md 3.5). Every cloud
+    // pass binds the full SRV + UAV tables; a pass only touches the slots it needs.
+    enum CloudSRV
+    {
+        SRV_Kernel = 0, SRV_Macro, SRV_Tile, SRV_Weather, SRV_SkyTrans, SRV_SkyView,
+        SRV_Depth, SRV_BlueNoise, SRV_LightCache, SRV_HistColor, SRV_HistDepth,
+        SRV_Scatter, SRV_CloudDepth, SRV_DenoiseTmp, SRV_MacroGrid, SRV_Count
+    };
+    enum CloudUAV
+    {
+        UAV_Kernel = 0, UAV_Macro, UAV_Tile, UAV_Weather, UAV_SkyTrans, UAV_SkyView,
+        UAV_LightCache, UAV_Scatter, UAV_CloudDepth, UAV_DenoiseTmp, UAV_HistColor,
+        UAV_HistDepth, UAV_HdrOut, UAV_MacroCount, UAV_MacroGrid, UAV_Count
+    };
+
+    // CPU mirror of the CloudConstants cbuffer in CloudCommon.hlsli (docs/PLAN.md 3.4).
     struct CloudConstants
     {
-        DirectX::XMFLOAT4X4 invViewProj;     // unjittered, current frame
-        DirectX::XMFLOAT4X4 prevViewProj;    // unjittered, previous frame
-        DirectX::XMFLOAT4 camPosWS;          // xyz cam pos, w = time seconds
-        DirectX::XMFLOAT4 sunDirWS;          // xyz toward sun, w = sun angular radius (rad)
-        DirectX::XMFLOAT4 sunRadiance;       // rgb, w = exposure hint
-        DirectX::XMFLOAT4 windOffset;        // xyz accumulated advection (m), w = wind speed
-        DirectX::XMFLOAT4 windPhaseVel;      // per-octave phase velocity (turns/s)
-        DirectX::XMFLOAT4 cacheOriginWS;     // xyz cache voxel(0,0,0) origin, w = 1/voxelSize
-        DirectX::XMFLOAT4 traceSize;         // x,y res; z,w 1/res
-        DirectX::XMFLOAT4 outputSize;        // x,y res; z,w 1/res
-        uint32 counts[4];                    // macroCount, kernelCount, tileCountX, tileCountY
-        DirectX::XMFLOAT4 lodParams;         // footprintScale, lodSkipThreshold, maskAggressiveness, survivalFloor
-        DirectX::XMFLOAT4 scatterParams;     // hgG0, hgG1, hgBlend, msOctaves
-        DirectX::XMFLOAT4 ambientParams;     // ambientStrength, groundAlbedo, cloudBaseY, cloudTopY
-        uint32 mode[4];                      // debugView, lightMode, traversalMode, frameIndex
-        DirectX::XMFLOAT4 temporal;          // alphaBase, disocclusionTauDelta, accumCount, histBlendMax
-        DirectX::XMFLOAT4 skyParams;         // turbidity, groundOffsetKm, lutPass, flags
-        uint32 genParams[4];                 // seed, kernelsPerMacroPerOctave, octaveCount, cacheSliceIndex
-        DirectX::XMFLOAT4 erosionParams;     // erosionBoundK, detailPosClampSigma, minSigmaM, maxSigmaM
+        DirectX::XMFLOAT4X4 invViewProj;
+        DirectX::XMFLOAT4X4 prevViewProj;
+        DirectX::XMFLOAT4 camPosWS;
+        DirectX::XMFLOAT4 sunDirWS;
+        DirectX::XMFLOAT4 sunRadiance;
+        DirectX::XMFLOAT4 windOffset;
+        DirectX::XMFLOAT4 windPhaseVel;
+        DirectX::XMFLOAT4 cacheOriginWS;
+        DirectX::XMFLOAT4 traceSize;
+        DirectX::XMFLOAT4 outputSize;
+        uint32 counts[4];
+        DirectX::XMFLOAT4 lodParams;
+        DirectX::XMFLOAT4 scatterParams;
+        DirectX::XMFLOAT4 ambientParams;
+        uint32 mode[4];
+        DirectX::XMFLOAT4 temporal;
+        DirectX::XMFLOAT4 skyParams;
+        uint32 genParams[4];
+        DirectX::XMFLOAT4 erosionParams;
     };
     static_assert(sizeof(CloudConstants) % 16 == 0, "CloudConstants must be 16-byte aligned");
 
-    // Volumetric cloud renderer (docs/PLAN.md). Owns every cloud sub-object and is
-    // the ONLY cloud-related hook in AwesomeGraphics. Runs after deferred lighting,
-    // before Camera::EndFrame / TAA; composites into the deferred HDR output.
+    // Volumetric cloud renderer (docs/PLAN.md). The single cloud hook in
+    // AwesomeGraphics. Owns the shared root signature, constant buffers, and
+    // descriptor tables; drives all sub-objects and passes.
     class CloudSystem
     {
     public:
@@ -48,34 +63,48 @@ namespace Awesome
         bool StartUp();
         bool TearDown();
         void Render(float delta);
-
-        // Debug-only DXC hot reload: FlushGPU + rebuild all cloud PSOs from source.
         void ReloadShaders();
 
-        // --- ImGui-facing state (GTAO-style public members) ---
+        // Shared binding used by every cloud pass (root sig, CB, full tables).
+        void BindCommon();
+        // Write a persistent view into one slot of every table copy.
+        void WriteSRV(uint32 slot, ID3D12Resource* res, const D3D12_SHADER_RESOURCE_VIEW_DESC* desc);
+        void WriteUAV(uint32 slot, ID3D12Resource* res, const D3D12_UNORDERED_ACCESS_VIEW_DESC* desc);
+        // Create a committed UAV-capable 2D texture (starts in NON_PIXEL_SHADER_RESOURCE).
+        ID3D12Resource* CreateTex2D(uint32 w, uint32 h, DXGI_FORMAT fmt, const wchar_t* name);
+
+        ID3D12RootSignature* GetRootSignature() const { return m_rootSignature; }
+
+        // --- ImGui-facing state ---
         bool  m_enabled = true;
-        float m_timeOfDay = 14.0f;        // hours; drives sun + sky LUTs (P1.3)
-        uint32 m_debugView = 0;           // CLOUD_DBG_*
-        uint32 m_lightMode = 0;           // CLOUD_LIGHT_*
-        uint32 m_traversalMode = 3;       // CLOUD_TRAV_* (brute until P2)
+        float m_timeOfDay = 14.0f;
+        float m_turbidity = 3.0f;
+        float m_sunIntensity = 20.0f;
+        uint32 m_debugView = 0;
+        uint32 m_lightMode = 0;
+        uint32 m_traversalMode = 3;
 
     private:
         void UpdateConstants(float delta);
+        void FillNullDescriptors();
+        uint32 CurBlock() const;   // index into m_srvBlocks/m_uavBlocks for this frame
 
         AwesomeGraphics* m_Awesome;
         CloudShaderCompiler* m_shaderCompiler;
+        SkyAtmosphere* m_sky;
 
         ID3D12RootSignature* m_rootSignature = nullptr;
 
-        // Persistently mapped per-frame-index constant buffers (DOD constraint C4).
         ID3D12Resource* m_constantBuffer[c_frameBufferCount] = {};
         uint8* m_constantMapped[c_frameBufferCount] = {};
         CloudConstants m_constants = {};
 
+        ID3D12Resource* m_nullTex = nullptr;   // fills unused descriptor slots
+        uint32 m_compositePSO = (uint32)-1;
         float m_timeSeconds = 0.0f;
+        float m_lastSunY = -999.0f;            // sky-dirty tracking
 
-        // Persistent descriptor tables, allocated once from the Assets section
-        // (docs/PLAN.md 3.5): [frameIndex(3)][historyPingPong(2)] SRV + UAV blocks.
+        // Persistent descriptor blocks from the Assets section: [frameIndex][pingpong].
         std::vector<DescriptorHandle> m_srvBlocks[c_frameBufferCount][2];
         std::vector<DescriptorHandle> m_uavBlocks[c_frameBufferCount][2];
     };

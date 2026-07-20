@@ -57,9 +57,15 @@ When two choices conflict, the LOWER number wins.
   params). Compaction via prefix sum, never raw UAV-append ordering. Same seed ⇒ same buffers.
 - **C6 — Transcendental fusion.** The inner loop computes ONE `exp` and ONE `cos` per surviving
   candidate: sum all exponent terms (envelope + Gabor damping + LOD) before the single `exp`.
-- **C7 — ≤6 compute PSOs for the cloud system.** Debug views and lighting mode are a uniform branch
-  on `CloudConstants.debugView` / `.lightMode`. `#define` permutations only for `TRACE_RQ` (RayQuery
-  A/B) and `TRACE_BRUTE` (Phase 1 path).
+- **C7 — few compute PSOs in the per-frame path.** Debug views and lighting mode are a uniform branch
+  on `CloudConstants.mode` (`.x` debugView / `.y` lightMode). **The offline premake build emits one
+  `.cso` per `.hlsl` entry file and does NOT honor `-D` defines** (verified: `LoadCompiledShader`
+  expects `<PERM>_<name>.cso`, which the build never produces; the engine's own variants such as
+  `Shadow_*` are separate files). Therefore each compile-time variant is a **separate thin `-c.hlsl`
+  entry file** that `#include`s a shared `.hlsli` — e.g. `SkyTransLUT-c`/`SkyViewLUT-c` include
+  `Sky.hlsli`; the trace variants (`CloudTrace-c` tiled, `CloudTraceBrute-c`, `CloudTraceRQ-c`)
+  include a shared `CloudTrace.hlsli`. This also covers runtime state that would otherwise require a
+  mid-frame CB mutation (CB writes are not ordered against dispatches).
 
 ---
 

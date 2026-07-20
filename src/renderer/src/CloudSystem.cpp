@@ -1,64 +1,113 @@
 #include "CloudSystem.h"
 #include "CloudShaderCompiler.h"
+#include "SkyAtmosphere.h"
 #include "Awesome.h"
 #include "Compute.h"
+#include "Deferred.h"
 #include "Scene.h"
 #include "Util.h"
 
 using namespace Awesome;
 using namespace DirectX;
 
-// Global register map (docs/PLAN.md 3.5): every cloud pass shares this root signature.
-// p0 root CBV b0 | p1 SRV table t0-t14 | p2 UAV table u0-u14 | p3 root SRV t15 (TLAS)
-static const uint32 c_cloudSrvSlots = 15;
-static const uint32 c_cloudUavSlots = 15;
+static const uint32 c_cloudSrvSlots = SRV_Count;   // 15
+static const uint32 c_cloudUavSlots = UAV_Count;   // 15
 
 CloudSystem::CloudSystem(AwesomeGraphics* Awesome)
     : m_Awesome(Awesome)
     , m_shaderCompiler(new CloudShaderCompiler(Awesome))
+    , m_sky(new SkyAtmosphere(Awesome, this))
 {
 }
 
 CloudSystem::~CloudSystem()
 {
+    delete m_sky;
     delete m_shaderCompiler;
+}
+
+uint32 CloudSystem::CurBlock() const
+{
+    return m_Awesome->GetCurrentFrameIndex();
+}
+
+ID3D12Resource* CloudSystem::CreateTex2D(uint32 w, uint32 h, DXGI_FORMAT fmt, const wchar_t* name)
+{
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width = w;
+    desc.Height = h;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels = 1;
+    desc.SampleDesc.Count = 1;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    desc.Format = fmt;
+    return m_Awesome->CreateBuffer(desc, name, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+}
+
+void CloudSystem::WriteSRV(uint32 slot, ID3D12Resource* res, const D3D12_SHADER_RESOURCE_VIEW_DESC* desc)
+{
+    for (uint32 f = 0; f < c_frameBufferCount; ++f)
+        for (uint32 p = 0; p < 2; ++p)
+            m_Awesome->Device()->CreateShaderResourceView(res, desc, m_srvBlocks[f][p][slot].cpuHandle);
+}
+
+void CloudSystem::WriteUAV(uint32 slot, ID3D12Resource* res, const D3D12_UNORDERED_ACCESS_VIEW_DESC* desc)
+{
+    for (uint32 f = 0; f < c_frameBufferCount; ++f)
+        for (uint32 p = 0; p < 2; ++p)
+            m_Awesome->Device()->CreateUnorderedAccessView(res, nullptr, desc, m_uavBlocks[f][p][slot].cpuHandle);
+}
+
+void CloudSystem::FillNullDescriptors()
+{
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
+    srv.Format = DXGI_FORMAT_R32_FLOAT;
+    srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv.Texture2D.MipLevels = 1;
+    srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uav = {};
+    uav.Format = DXGI_FORMAT_R32_FLOAT;
+    uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+
+    for (uint32 s = 0; s < c_cloudSrvSlots; ++s)
+        WriteSRV(s, m_nullTex, &srv);
+    for (uint32 s = 0; s < c_cloudUavSlots; ++s)
+        WriteUAV(s, m_nullTex, &uav);
 }
 
 bool CloudSystem::StartUp()
 {
     m_shaderCompiler->StartUp();
 
-    // Shared root signature for all cloud passes
+    // Shared root signature (docs/PLAN.md 3.5).
     {
         D3D12_DESCRIPTOR_RANGE srvRange = {};
         srvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
         srvRange.NumDescriptors = c_cloudSrvSlots;
         srvRange.BaseShaderRegister = 0;
-        srvRange.RegisterSpace = 0;
         srvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
         D3D12_DESCRIPTOR_RANGE uavRange = {};
         uavRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
         uavRange.NumDescriptors = c_cloudUavSlots;
         uavRange.BaseShaderRegister = 0;
-        uavRange.RegisterSpace = 0;
         uavRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
         D3D12_ROOT_PARAMETER params[4] = {};
         params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-        params[0].Descriptor = { 0, 0 };   // b0
+        params[0].Descriptor = { 0, 0 };
         params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-
         params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         params[1].DescriptorTable = { 1, &srvRange };
         params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-
         params[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         params[2].DescriptorTable = { 1, &uavRange };
         params[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-
-        params[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;   // TLAS GPU VA (RQ paths; 0 = unused)
-        params[3].Descriptor = { 15, 0 };  // t15
+        params[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;   // TLAS (RQ paths)
+        params[3].Descriptor = { 15, 0 };
         params[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
         D3D12_ROOT_SIGNATURE_DESC desc = {};
@@ -75,16 +124,14 @@ bool CloudSystem::StartUp()
             if (errorBuff) DebugPrint((char*)errorBuff->GetBufferPointer());
             return false;
         }
-
         HRESULT hr = m_Awesome->Device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature));
         SafeRelease(signature);
         SafeRelease(errorBuff);
-        if (FAILED(hr))
-            return false;
+        if (FAILED(hr)) return false;
         m_rootSignature->SetName(L"Cloud Root Signature");
     }
 
-    // Persistently mapped constant buffers, one per frame index (C4: no per-frame allocation)
+    // Persistently mapped constant buffers, one per frame index (DOD C4).
     {
         const uint64 cbSize = (sizeof(CloudConstants) + 255) & ~255ull;
         for (uint32 i = 0; i < c_frameBufferCount; ++i)
@@ -98,31 +145,42 @@ bool CloudSystem::StartUp()
             desc.SampleDesc.Count = 1;
             desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
             desc.Format = DXGI_FORMAT_UNKNOWN;
-
             m_constantBuffer[i] = m_Awesome->CreateBuffer(desc, L"Cloud Constants", D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ);
-            if (!m_constantBuffer[i])
-                return false;
-
+            if (!m_constantBuffer[i]) return false;
             D3D12_RANGE noRead = { 0, 0 };
-            if (FAILED(m_constantBuffer[i]->Map(0, &noRead, (void**)&m_constantMapped[i])))
-                return false;
+            if (FAILED(m_constantBuffer[i]->Map(0, &noRead, (void**)&m_constantMapped[i]))) return false;
         }
     }
 
-    // Persistent descriptor blocks from the Assets section (docs/PLAN.md 3.5).
-    // Views are written into these slots as resources come online in later steps.
+    // Persistent descriptor blocks (Assets section) — docs/PLAN.md 3.5.
     for (uint32 f = 0; f < c_frameBufferCount; ++f)
-    {
         for (uint32 p = 0; p < 2; ++p)
         {
             m_Awesome->GetMainDescHeap()->AllocateBlock(m_srvBlocks[f][p], c_cloudSrvSlots, DescriptorSection::Assets);
             m_Awesome->GetMainDescHeap()->AllocateBlock(m_uavBlocks[f][p], c_cloudUavSlots, DescriptorSection::Assets);
             if (m_srvBlocks[f][p].size() != c_cloudSrvSlots || m_uavBlocks[f][p].size() != c_cloudUavSlots)
             {
-                DebugPrint("CloudSystem: descriptor block allocation failed (Assets section full?)\n");
+                DebugPrint("CloudSystem: descriptor block allocation failed\n");
                 return false;
             }
         }
+
+    // 1x1 null texture to initialise every otherwise-unused descriptor slot.
+    m_nullTex = CreateTex2D(1, 1, DXGI_FORMAT_R32_FLOAT, L"Cloud Null Tex");
+    if (!m_nullTex) return false;
+    FillNullDescriptors();
+
+    if (!m_sky->StartUp())
+        return false;
+
+    // Composite PSO
+    {
+        std::vector<D3D_SHADER_MACRO*> perms;
+        perms.push_back(new D3D_SHADER_MACRO[1]{ { NULL, NULL } });
+        uint32 shader = m_Awesome->GetComputeSystem()->CompileShader(L"CloudComposite-c", perms);
+        if (shader == invalidIndex32) return false;
+        m_compositePSO = m_Awesome->GetComputeSystem()->CreatePipeline(shader, m_rootSignature);
+        if (m_compositePSO == (uint32)-1) return false;
     }
 
     return true;
@@ -130,6 +188,7 @@ bool CloudSystem::StartUp()
 
 bool CloudSystem::TearDown()
 {
+    m_sky->TearDown();
     for (uint32 i = 0; i < c_frameBufferCount; ++i)
     {
         if (m_constantBuffer[i])
@@ -139,15 +198,13 @@ bool CloudSystem::TearDown()
         }
         for (uint32 p = 0; p < 2; ++p)
         {
-            for (DescriptorHandle& h : m_srvBlocks[i][p])
-                m_Awesome->GetMainDescHeap()->Free(h);
-            for (DescriptorHandle& h : m_uavBlocks[i][p])
-                m_Awesome->GetMainDescHeap()->Free(h);
+            for (DescriptorHandle& h : m_srvBlocks[i][p]) m_Awesome->GetMainDescHeap()->Free(h);
+            for (DescriptorHandle& h : m_uavBlocks[i][p]) m_Awesome->GetMainDescHeap()->Free(h);
             m_srvBlocks[i][p].clear();
             m_uavBlocks[i][p].clear();
         }
     }
-
+    SafeRelease(m_nullTex);
     SafeRelease(m_rootSignature);
     m_shaderCompiler->TearDown();
     return true;
@@ -155,11 +212,9 @@ bool CloudSystem::TearDown()
 
 void CloudSystem::ReloadShaders()
 {
-    if (!m_shaderCompiler)
-        return;
+    if (!m_shaderCompiler) return;
     m_Awesome->FlushGPU();
-    // PSO list is rebuilt here as passes come online (P1.3+). Empty for now.
-    DebugPrint("CloudSystem: shader reload requested (no PSOs yet)\n");
+    DebugPrint("CloudSystem: shader reload requested (offline .cso PSOs; hot reload wires in later)\n");
 }
 
 void CloudSystem::UpdateConstants(float delta)
@@ -167,17 +222,29 @@ void CloudSystem::UpdateConstants(float delta)
     m_timeSeconds += delta;
     Camera* cam = m_Awesome->GetCurrentScene()->GetCamera();
 
-    // Camera viewProj/prevViewProj are unjittered (TAA jitter is applied per-mesh),
-    // which is exactly what cloud rays need (docs/PLAN.md 4.8).
-    XMMATRIX viewProj = cam->GetViewProjectionSpaceMatrix();
+    // Sun direction from time of day (simple east-west arc), and drive the
+    // engine sun light so cascades/deferred agree with the clouds.
+    float dayT = (m_timeOfDay - 6.0f) / 12.0f;                 // 0 at 6h, 1 at 18h
+    float elev = sinf(dayT * 3.14159265f) * 1.4f - 0.05f;      // radians above horizon
+    float azim = (dayT - 0.5f) * 2.2f;
+    XMVECTOR sunDir = XMVector3Normalize(XMVectorSet(sinf(azim) * cosf(elev), sinf(elev), -cosf(azim) * cosf(elev), 0.0f));
+    XMFLOAT3 sd; XMStoreFloat3(&sd, sunDir);
+
+    Light* sun = m_Awesome->GetCurrentScene()->GetSunLight();
+    sun->direction = { -sd.x, -sd.y, -sd.z };                  // engine stores direction of travel (from sun)
+
+    XMMATRIX viewProj = cam->GetViewProjectionSpaceMatrix();   // unjittered
     XMStoreFloat4x4(&m_constants.invViewProj, XMMatrixInverse(nullptr, viewProj));
     XMStoreFloat4x4(&m_constants.prevViewProj, cam->prevViewProjMatrix);
 
     m_constants.camPosWS = { cam->transform.position.x, cam->transform.position.y, cam->transform.position.z, m_timeSeconds };
+    m_constants.sunDirWS = { sd.x, sd.y, sd.z, 0.004625f };
+    float sunUp = sd.y * 4.0f; sunUp = sunUp < 0.0f ? 0.0f : (sunUp > 1.0f ? 1.0f : sunUp);
+    m_constants.sunRadiance = { m_sunIntensity * sunUp, m_sunIntensity * sunUp * 0.9f, m_sunIntensity * sunUp * 0.75f, 1.0f };
 
     float w = (float)m_Awesome->GetWidth();
     float h = (float)m_Awesome->GetHeight();
-    m_constants.traceSize = { w, h, 1.0f / w, 1.0f / h };      // full-res until P5.2
+    m_constants.traceSize = { w, h, 1.0f / w, 1.0f / h };
     m_constants.outputSize = { w, h, 1.0f / w, 1.0f / h };
 
     m_constants.mode[0] = m_debugView;
@@ -185,15 +252,32 @@ void CloudSystem::UpdateConstants(float delta)
     m_constants.mode[2] = m_traversalMode;
     m_constants.mode[3] = (uint32)m_Awesome->GetCurrentFrame();
 
-    // Defaults refined as features come online (sun/sky P1.3, LOD/masking P5.1)
-    m_constants.sunDirWS = { 0.0f, 1.0f, 0.0f, 0.004625f };
-    m_constants.sunRadiance = { 1.0f, 1.0f, 1.0f, 1.0f };
     m_constants.scatterParams = { 0.85f, -0.15f, 0.7f, 3.0f };
     m_constants.ambientParams = { 1.0f, 0.3f, 1200.0f, 3200.0f };
-    m_constants.lodParams = { 2.0f * tanf(cam->verticalFOV * 0.5f) / h, 0.02f, 1.0f, 0.05f };   // verticalFOV is radians
+    m_constants.lodParams = { 2.0f * tanf(cam->verticalFOV * 0.5f) / h, 0.02f, 1.0f, 0.05f };
     m_constants.erosionParams = { 0.7f, 4.0f, 20.0f, 2000.0f };
+    m_constants.skyParams = { m_turbidity, 0.0f, 0.0f, 0.0f };   // .w cloudsActive = 0 until trace (P1.4)
+    m_constants.counts[0] = 0; m_constants.counts[1] = 0;
 
     memcpy(m_constantMapped[m_Awesome->GetCurrentFrameIndex()], &m_constants, sizeof(CloudConstants));
+
+    // Dirty the sky when the sun elevation changes appreciably.
+    if (fabsf(sd.y - m_lastSunY) > 0.001f)
+    {
+        m_lastSunY = sd.y;
+        m_sky->MarkDirty();
+    }
+}
+
+void CloudSystem::BindCommon()
+{
+    ID3D12GraphicsCommandList* cl = m_Awesome->GetCommandList();
+    uint32 f = CurBlock();
+    cl->SetComputeRootSignature(m_rootSignature);
+    cl->SetComputeRootConstantBufferView(0, m_constantBuffer[f]->GetGPUVirtualAddress());
+    cl->SetComputeRootDescriptorTable(1, m_srvBlocks[f][0][0].gpuHandle);
+    cl->SetComputeRootDescriptorTable(2, m_uavBlocks[f][0][0].gpuHandle);
+    // param 3 (TLAS) left unset until RQ paths exist (P2); those shaders don't read t15.
 }
 
 void CloudSystem::Render(float delta)
@@ -204,6 +288,42 @@ void CloudSystem::Render(float delta)
     PIXScopedEvent(m_Awesome->GetCommandList(), 0, "Clouds");
     UpdateConstants(delta);
 
-    // Passes come online in later steps: sky LUTs + composite (P1.3),
-    // trace (P1.4), tiles (P2), generation (P3), lighting (P4), temporal (P5).
+    uint32 f = CurBlock();
+
+    // Per-frame view refresh for engine-managed resources whose ID3D12Resource*
+    // is not stable: scene depth (recreated on resize) and the pool-recycled
+    // deferred HDR output. One CreateView each — see docs/STATUS.md deviations.
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC dsrv = {};
+        dsrv.Format = DXGI_FORMAT_R32_FLOAT;   // D32 read as R32
+        dsrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        dsrv.Texture2D.MipLevels = 1;
+        dsrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        m_Awesome->Device()->CreateShaderResourceView(m_Awesome->GetDepthStencilBuffer(), &dsrv, m_srvBlocks[f][0][SRV_Depth].cpuHandle);
+
+        D3D12_UNORDERED_ACCESS_VIEW_DESC ouav = {};
+        ouav.Format = DXGI_FORMAT_R11G11B10_FLOAT;
+        ouav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        m_Awesome->Device()->CreateUnorderedAccessView(m_Awesome->GetDeferredRenderer()->GetOutputBuffer(), nullptr, &ouav, m_uavBlocks[f][0][UAV_HdrOut].cpuHandle);
+    }
+
+    BindCommon();
+
+    // Sky LUTs (regenerate only when dirty).
+    {
+        PIXScopedEvent(m_Awesome->GetCommandList(), 0, "Cloud Sky");
+        m_sky->Render();
+    }
+
+    // Composite: sky behind geometry + (later) cloud blend, in-place on the
+    // deferred HDR output (which is already in UNORDERED_ACCESS here).
+    {
+        PIXScopedEvent(m_Awesome->GetCommandList(), 0, "Cloud Composite");
+        m_Awesome->TransitionResource(m_Awesome->GetDepthStencilBuffer(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        m_Awesome->GetComputeSystem()->SetPSO(m_compositePSO);
+        uint32 gx = ((uint32)m_constants.outputSize.x + 7) / 8;
+        uint32 gy = ((uint32)m_constants.outputSize.y + 7) / 8;
+        m_Awesome->GetCommandList()->Dispatch(gx, gy, 1);
+        m_Awesome->TransitionResource(m_Awesome->GetDepthStencilBuffer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+    }
 }

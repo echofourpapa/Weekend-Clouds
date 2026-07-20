@@ -23,7 +23,10 @@ machine — do not block on them unless a later step depends on the result.
       SRV), persistently-mapped cloudCB[3], 6+6 persistent descriptor blocks from Assets section,
       all 5 god-class wiring points, ImGui Clouds section incl. the P0.4 reload button (deviation
       resolved)
-- [ ] P1.3 SkyAtmosphere + SkyLUT-c.hlsl + sky-only composite + sun drives GetSunLight()
+- [x] P1.3 SkyAtmosphere (Sky.hlsli + SkyTransLUT-c/SkyViewLUT-c entry files, 256x64 + 192x108 LUTs,
+      dirty-tracked), CloudComposite-c (sky where depth==0, cloud blend gated by cloudsActive), sun
+      from time-of-day drives GetSunLight(); CloudSystem now creates resources, fills null
+      descriptors, binds shared tables, dispatches sky+composite
 - [ ] P1.4 Brute-force trace (TRACE_BRUTE), hand-placed kernels, full composite, diff debug view
 
 ## Phase 2 — traversal
@@ -60,6 +63,18 @@ machine — do not block on them unless a later step depends on the result.
   allowed god-class hook (PLAN §6.3) and didn't exist yet. RESOLVED in P1.2: CloudSystem owns
   CloudShaderCompiler and the button exists in the Clouds ImGui section.
 - P1.2: DescriptorHeap::AllocateBlock already had a section parameter — no engine extension needed.
+- P1.3: **offline build ignores -D permutations** (see PLAN §C7). Compile-time variants are separate
+  entry `-c.hlsl` files including a shared `.hlsli`. SkyLUT split into Sky.hlsli + SkyTransLUT-c +
+  SkyViewLUT-c.
+- P1.3: **C4 relaxed for two engine-managed resources** whose ID3D12Resource* isn't stable — scene
+  depth (recreated on resize; clouds have no Resize hook) and the pool-recycled deferred HDR output.
+  Their SRV/UAV are (re)written into the persistent slots once per frame (one CreateView each). All
+  other cloud resources keep persistent views.
+- P1.3: composite does in-place RW on the R11G11B10 deferred output → requires the typed-UAV-load cap
+  (checked in P0.3; present on the 4070 target). No copy-based fallback implemented yet.
+- P1.3: sun/scene unification has a 1-frame lag — clouds set GetSunLight()->direction at the cloud
+  hook (after deferred), so deferred consumes it next frame. AnimateLights only touches point lights,
+  so it persists. Full IBL/exposure unification is P4.4.
 
 ## User-verification queue
 (steps finished in-code, awaiting a Windows build/run report)
