@@ -1,0 +1,16 @@
+[[Object]]
+name = 'Bistro'
+mesh = 'Bistro Ext'
+position = [0,0,0]
+rotation = [0,180,0]
+scale = [2.54, 2.54, 2.54]
+
+[[Object]]
+name = 'Color PBR Checker'
+mesh = 'Color PBR Checker'
+position = [11, 3, -2.5]
+rotation = [0,90,0]
+scale = [0.254, 0.254, 0.254]
+
+[[IBL]]
+name = 'San Giuseppe Bridge'

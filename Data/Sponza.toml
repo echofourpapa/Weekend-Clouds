@@ -1,0 +1,30 @@
+[[Object]]
+name = 'Sponza'
+mesh = 'Sponza Main'
+position = [0,0,0]
+rotation = [0,0,0]
+scale = [0.05, 0.05, 0.05]
+
+[[Object]]
+name = 'Sponza Curtains'
+mesh = 'Sponza Curtains'
+position = [0,0,0]
+rotation = [0,0,0]
+scale = [0.05, 0.05, 0.05]
+
+[[Object]]
+name = 'Sponza Ivy'
+mesh = 'Sponza Ivy'
+position = [0,0,0]
+rotation = [0,0,0]
+scale = [0.05, 0.05, 0.05]
+
+[[Object]]
+name = 'Color PBR Checker'
+mesh = 'Color PBR Checker'
+position = [0,8,-10.0]
+rotation = [90,0,0]
+scale = [0.5, 0.5, 0.5]
+
+[[IBL]]
+name = 'Kloppenheim'

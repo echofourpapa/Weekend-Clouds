@@ -1,0 +1,140 @@
+[[Shader]]
+name = 'PBR Vertex'
+type = 'vertex'
+path = 'MeshVertexShader-v'
+permuations = []
+
+[[Shader]]
+name = 'PBR Pixel'
+type = 'pixel'
+path = 'MeshPixelShader-p'
+permuations = []
+
+[[Shader]]
+name = 'PBR Cloth Pixel'
+type = 'pixel'
+path = 'MeshPixelShaderCloth-p'
+permuations = []
+
+[[Shader]]
+name = 'PBR Foliage Pixel'
+type = 'pixel'
+path = 'MeshPixelShaderFoliage-p'
+permuations = []
+
+[[Shader]]
+name = 'PBR Bistro Pixel'
+type = 'pixel'
+path = 'MeshPixelShaderBistro-p'
+permuations = []
+
+[[Shader]]
+name = 'PBR Bistro Foliage Pixel'
+type = 'pixel'
+path = 'MeshPixelShaderBistroFoliage-p'
+permuations = []
+
+[[Material]]
+name = 'Base PBR'
+vertex = 'PBR Vertex'
+pixel = 'PBR Pixel'
+twosided = true
+
+[[Material]]
+name = 'Cloth PBR'
+vertex = 'PBR Vertex'
+pixel = 'PBR Cloth Pixel'
+twosided = true
+
+[[Material]]
+name = 'Base Foliage'
+vertex = 'PBR Vertex'
+pixel = 'PBR Foliage Pixel'
+twosided = true
+
+[[Material]]
+name = 'Bistro PBR'
+vertex = 'PBR Vertex'
+pixel = 'PBR Bistro Pixel'
+twosided = false
+
+[[Material]]
+name = 'Foliage'
+vertex = 'PBR Vertex'
+pixel = 'PBR Bistro Foliage Pixel'
+twosided = true
+
+[[Mesh]]
+name = 'Color PBR Checker'
+path = 'D:\code\color_check\color_pbr_checker.fbx'
+material = 'Base PBR'
+
+[[Mesh]]
+name = 'Sphere'
+path = 'D:\code\sphere.fbx'
+material = 'Base PBR'
+primitive = true
+
+[[Mesh]]
+name = 'Bistro Ext'
+path = 'D:\code\Bistro_v5_2\BistroExterior.fbx'
+material = 'Bistro PBR'
+bake = true
+
+[[Mesh]]
+name = 'Sponza Main'
+path = 'D:\code\Main.1_Sponza\NewSponza_Main_Yup_002.fbx'
+material = 'Base PBR'
+bake = true
+
+[[Mesh]]
+name = 'Sponza Curtains'
+path = 'D:\code\PKG_A_Curtains\NewSponza_Curtains_FBX_YUp.fbx'
+material = 'Cloth PBR'
+bake = true
+
+[[Mesh]]
+name = 'Sponza Ivy'
+path = 'D:\code\PKG_B_Ivy\NewSponza_IvyGrowth_FBX_YUp.fbx'
+material = 'Base Foliage'
+bake = true
+
+[[IBL]]
+name = 'San Giuseppe Bridge'
+path = 'D:\code\Bistro_v5_2\san_giuseppe_bridge_4k.hdr'
+
+[[IBL]]
+name = 'Kloppenheim'
+path = 'D:\code\Main.1_Sponza\textures\kloppenheim_05_4k.hdr'
+
+[[IBL]]
+name = 'Fortress'
+path = 'D:\code\PKG_B_Ivy\textures\Fortress-Kastel-4K.hdr'
+
+[[IBL]]
+name = 'Resting Place'
+path = 'D:\code\hdri\resting_place_2_4k.hdr'
+
+[[IBL]]
+name = 'Pretville Street'
+path = 'D:\code\hdri\pretville_street_4k.hdr'
+
+[[IBL]]
+name = 'Kloofendal'
+path = 'D:\code\hdri\kloofendal_48d_partly_cloudy_puresky_4k.hdr'
+
+# [[IBL]]
+# name = 'Evening Meadow'
+# path = 'D:\code\models\evening_meadow_2k.hdr'
+
+[[Scene]]
+name = 'Color PBR Checker'
+path = 'D:\code\toy-renderer\data\ColorChecker.toml'
+
+[[Scene]]
+name = 'Bistro'
+path = 'D:\code\toy-renderer\data\Bistro.toml'
+
+[[Scene]]
+name = 'Sponza'
+path = 'D:\code\toy-renderer\data\Sponza.toml'
