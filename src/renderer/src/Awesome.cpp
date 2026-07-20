@@ -19,6 +19,7 @@
 #include "DirectionalShadows.h"
 #include "LightCulling.h"
 #include "GTAO.h"
+#include "CloudSystem.h"
 #include "AwesomeProfiler.h"
 #include "ResourcePool.h"
 #include "DescriptorHeap.h"
@@ -308,6 +309,7 @@ AwesomeGraphics::AwesomeGraphics(HWND hwnd, uint16 width, uint16 height)
     , m_UISystem(new UISystem(this, m_quad))
     , m_directShadows(new DirectionalShadows(this))
     , m_gtao(new GTAO(this))
+    , m_clouds(new CloudSystem(this))
     , m_tileLightCulling(new TileLightCull(this))
     , m_profiler(new AwesomeProfiler(this))
     
@@ -547,7 +549,10 @@ bool AwesomeGraphics::StartUp()
     
     if (!m_gtao->StartUp())
         return false;
-    
+
+    if (!m_clouds->StartUp())
+        return false;
+
     if (!m_postFX->StartUp())
         return false;
 
@@ -616,6 +621,7 @@ void AwesomeGraphics::TearDown()
     m_directShadows->TearDown(); m_directShadows = nullptr;
     m_tileLightCulling->TearDown(); m_tileLightCulling = nullptr;
     m_gtao->TearDown(); m_gtao = nullptr;
+    m_clouds->TearDown(); m_clouds = nullptr;
     m_profiler->TearDown(); m_profiler = nullptr;
     m_resourcePool->TearDown(); m_resourcePool = nullptr;
     m_quad->TearDown(); m_quad = nullptr;
@@ -1417,6 +1423,11 @@ GTAO* AwesomeGraphics::GetGTAO()
     return m_gtao;
 }
 
+CloudSystem* AwesomeGraphics::GetClouds()
+{
+    return m_clouds;
+}
+
 AwesomeProfiler* AwesomeGraphics::GetProfiler()
 {
     return m_profiler;
@@ -1511,6 +1522,11 @@ bool AwesomeGraphics::Render(float delta)
     {
         PROFILE_SCOPE(GetProfiler(), GetCommandList(), "Deferred Lighting", scopeIdx++);
         m_deferredRenderer->Render(delta);
+    }
+
+    {
+        PROFILE_SCOPE(GetProfiler(), GetCommandList(), "Clouds", scopeIdx++);
+        m_clouds->Render(delta);
     }
 
     m_scene->GetCamera()->EndFrame();

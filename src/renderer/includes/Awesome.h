@@ -24,6 +24,7 @@ namespace Awesome
     //class HairSystem;
     class PostFX;
     class GTAO;
+    class CloudSystem;
     class UISystem;
     class AweosmeProfiler;
     class DirectionalShadows;
@@ -122,6 +123,7 @@ namespace Awesome
         DirectionalShadows* GetDirectShadows();
         TileLightCull* GetTiledLights();
         GTAO* GetGTAO();
+        CloudSystem* GetClouds();
         
         AwesomeProfiler* GetProfiler();
 
@@ -213,6 +215,7 @@ namespace Awesome
         DirectionalShadows* m_directShadows;
         TileLightCull* m_tileLightCulling;
         GTAO* m_gtao;
+        CloudSystem* m_clouds;
         
         AwesomeProfiler* m_profiler;
 

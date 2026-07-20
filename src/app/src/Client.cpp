@@ -8,6 +8,7 @@
 #include "ResourceLoader.h"
 #include "ScreenSpaceShadows.h"
 #include "DirectionalShadows.h"
+#include "CloudSystem.h"
 #include "Deferred.h"
 #include "PostFX.h"
 #include "AwesomeProfiler.h"
@@ -767,7 +768,15 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                     ImGui::SliderFloat("Thickness", &Awesome.GetGTAO()->m_thickness, 0.00001f, 1.f, "%.6f");
                     SliderUInt("Slice Count", &Awesome.GetGTAO()->m_sliceCount, 1, 8);
                     SliderUInt("Step Count", &Awesome.GetGTAO()->m_stepCount, 1, 16);
-                    
+
+                    ImGui::Separator();
+                    ImGui::Text("Clouds");
+
+                    ImGui::Checkbox("Clouds Enabled", &Awesome.GetClouds()->m_enabled);
+                    ImGui::SliderFloat("Time of Day", &Awesome.GetClouds()->m_timeOfDay, 0.0f, 24.0f, "%.2f h");
+                    if (ImGui::Button("Reload Cloud Shaders"))
+                        Awesome.GetClouds()->ReloadShaders();
+
                     ImGui::Separator();
                     ImGui::Text("Screen Space Shadows");
 

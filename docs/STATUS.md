@@ -19,7 +19,10 @@ machine — do not block on them unless a later step depends on the result.
 ## Phase 1 — sky + scaffold + brute force
 - [x] P1.1 CloudCommon.hlsli + CloudKernels.hlsli (math transliterated from validate_math.py;
       MATH-CHECK green; no dxc in container — CloudNull-c.hlsl probe compiles on the Windows build)
-- [ ] P1.2 CloudSystem skeleton: root sig, cloudCB[3], Assets-section descriptor blocks, engine wiring
+- [x] P1.2 CloudSystem skeleton: shared root sig (root CBV + 15 SRV + 15 UAV tables + TLAS root
+      SRV), persistently-mapped cloudCB[3], 6+6 persistent descriptor blocks from Assets section,
+      all 5 god-class wiring points, ImGui Clouds section incl. the P0.4 reload button (deviation
+      resolved)
 - [ ] P1.3 SkyAtmosphere + SkyLUT-c.hlsl + sky-only composite + sun drives GetSunLight()
 - [ ] P1.4 Brute-force trace (TRACE_BRUTE), hand-placed kernels, full composite, diff debug view
 
@@ -53,9 +56,10 @@ machine — do not block on them unless a later step depends on the result.
 ## Deviations from spec
 (record any adaptation made when an anchor/contract in PLAN.md didn't match reality)
 
-- P0.4: the "Reload cloud shaders" ImGui button is deferred to P1.2 — CloudSystem is the only
-  allowed god-class hook (PLAN §6.3) and it doesn't exist yet; CloudShaderCompiler will be owned by
-  CloudSystem, which exposes the reload (FlushGPU + PSO rebuild) and the button.
+- P0.4: the "Reload cloud shaders" ImGui button was deferred to P1.2 — CloudSystem is the only
+  allowed god-class hook (PLAN §6.3) and didn't exist yet. RESOLVED in P1.2: CloudSystem owns
+  CloudShaderCompiler and the button exists in the Clouds ImGui section.
+- P1.2: DescriptorHeap::AllocateBlock already had a section parameter — no engine extension needed.
 
 ## User-verification queue
 (steps finished in-code, awaiting a Windows build/run report)
