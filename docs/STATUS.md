@@ -52,9 +52,15 @@ machine — do not block on them unless a later step depends on the result.
       macro-centre shift) + per-octave phase drift in the CB (KernelRaySetup applies it). No regen.
 
 ## Phase 4 — lighting
-- [ ] P4.1 Static-camera accumulation mode
-- [ ] P4.2 CloudLighting + sun-channel light cache + trace consumption
-- [ ] P4.3 Six-way variant + RT-reference mode + baked-vs-reference diff view
+- [x] P4.0 Approximate lighting (Beer-powder + height gradient + sky ambient) — no new infra, makes
+      clouds read as 3D. Placeholder until the field cache lands.
+- [ ] P4.1 Static-camera accumulation mode (needed once trace is stochastic / half-res)
+- [ ] P4.2 CloudLighting + sun-channel field cache (3D tex; needs a macro grid for the per-voxel sun
+      integration) + trace consumption. This replaces P4.0's heuristic with real self-shadowing.
+      NOTE: generation is CPU now, so the macro grid can be built CPU-side and uploaded alongside the
+      macro buffer (simplest); the cache build shader marches the grid toward the sun. Consider a
+      density-froxel hybrid if the analytic per-voxel sun march proves too costly.
+- [ ] P4.3 Six-way variant + RT-reference mode (needs RTScene from P2.3) + baked-vs-reference diff
 - [ ] P4.4 Sky→cubemap→IBL refresh + exposure clamp
 
 ## Phase 5 — LOD/temporal/perf
