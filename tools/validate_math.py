@@ -234,6 +234,67 @@ def check_fastpath_predicate():
     print("  full-domain fast-path predicate  OK")
 
 
+def check_packing():
+    """Round-trip the 32B CloudKernelPacked: CPU pack (CloudGenerator.cpp) ->
+    HLSL unpack (CloudKernels.hlsli). Mirrors both sides exactly."""
+    # --- CPU pack helpers (mirror CloudGenerator.cpp) ---
+    def packS16(v):
+        v = max(-1.0, min(1.0, v)); return int(round(v * 32767.0)) & 0xFFFF
+    def packS16x2(a, b): return packS16(a) | (packS16(b) << 16)
+    def packS8(v):
+        v = max(-1.0, min(1.0, v)); return int(round(v * 127.0)) & 0xFF
+    def packS8x4(x, y, z, w): return packS8(x) | (packS8(y) << 8) | (packS8(z) << 16) | (packS8(w) << 24)
+    def packF16x2(a, b):
+        ha = int(np.float16(a).view(np.uint16)); hb = int(np.float16(b).view(np.uint16))
+        return ha | (hb << 16)
+
+    # --- HLSL unpack helpers (mirror CloudKernels.hlsli) ---
+    def u_s16x2(v):
+        lo = v & 0xFFFF; hi = (v >> 16) & 0xFFFF
+        def sx(h): return max((h - 0x10000 if h & 0x8000 else h) / 32767.0, -1.0)
+        return sx(lo), sx(hi)
+    def u_s8x4(v):
+        def sx(b): return max((b - 0x100 if b & 0x80 else b) / 127.0, -1.0)
+        return sx(v & 0xFF), sx((v >> 8) & 0xFF), sx((v >> 16) & 0xFF), sx((v >> 24) & 0xFF)
+    def u_f16x2(v):
+        lo = np.uint16(v & 0xFFFF).view(np.float16); hi = np.uint16((v >> 16) & 0xFFFF).view(np.float16)
+        return float(lo), float(hi)
+
+    worst = 0.0
+    for _ in range(5000):
+        lx, ly, lz = RNG.uniform(-1, 1, 3)
+        q = RNG.normal(size=4); q /= np.linalg.norm(q)
+        if q[3] < 0: q = -q
+        sig = RNG.uniform(20, 2000); amp = RNG.uniform(-0.1, 0.1)
+        fx, fy, fz = RNG.uniform(-0.01, 0.01, 3); phase = RNG.uniform(0, 1)
+        flags = RNG.integers(0, 8); seed16 = int(RNG.integers(0, 0xFFFF))
+
+        a0 = packS16x2(lx, ly)
+        a1 = packS16(lz) | (int(flags) << 16)
+        a2 = packS8x4(*q)
+        a3 = packF16x2(sig, sig)
+        b0 = packF16x2(sig, amp)
+        b1 = packF16x2(fx, fy)
+        b2 = packF16x2(fz, phase)
+        b3 = seed16
+
+        # unpack (as UnpackKernel does)
+        rlx, rly = u_s16x2(a0); rlz = u_s16x2(a1)[0]; rflags = a1 >> 16
+        rq = u_s8x4(a2)
+        rsx, rsy = u_f16x2(a3); rsz, ramp = u_f16x2(b0)
+        rfx, rfy = u_f16x2(b1); rfz, rphase = u_f16x2(b2)
+
+        # errors (snorm16 ~3e-5, snorm8 ~8e-3, f16 relative ~1e-3)
+        worst = max(worst, abs(rlx - lx), abs(rly - ly), abs(rlz - lz))
+        assert rflags == flags, f"flags {rflags} != {flags}"
+        assert b3 == seed16
+        assert all(abs(a - b) < 0.02 for a, b in zip(rq, q)), f"quat {rq} vs {q}"
+        assert abs(ramp - amp) < 1e-3 + 1e-3 * abs(amp), f"amp {ramp} vs {amp}"
+        assert abs(rphase - phase) < 1e-3
+    assert worst < 3e-4, f"snorm16 pos error {worst}"
+    print(f"  kernel pack/unpack round-trip  OK (worst snorm16 {worst:.2e})")
+
+
 def print_layout():
     rows = [
         ("u0", "posX snorm16 | posY snorm16"),
@@ -262,6 +323,7 @@ def main():
     check_gabor_integral()
     check_freeflight()
     check_fastpath_predicate()
+    check_packing()
     print("ALL MATH CHECKS PASSED")
 
 

@@ -69,6 +69,15 @@ machine — do not block on them unless a later step depends on the result.
 - [ ] P6.3 VDB→Gabor fitting tool
 - [ ] P6.4 Agility preview / DXR 1.2 / work graphs
 
+## Review notes (Phase 2-3)
+- The highest-risk Phase 3 item — the 32-byte kernel CPU-pack (CloudGenerator.cpp) vs HLSL-unpack
+  (CloudKernels.hlsli) — is validated by tools/validate_math.py `check_packing` (mirrors both sides,
+  round-trips flags/quat/sigma/amp/freq/phase/seed within tolerance). A broader Phase 2-3 D3D12/HLSL
+  audit was started but not completed (session limit); re-run it when resuming (see the launch prompt
+  pattern used for the Phase 1 audit). Focus areas: binning frustum signs, tile-index agreement,
+  EnsureUploaded re-upload states, wind advection consistency (binning -windOffset vs trace
+  +windOffset).
+
 ## Review notes (Phase 1 audit)
 - Phase 1 D3D12/HLSL audited: layouts, registers, barriers, math, ray reconstruction all verified
   correct. Applied fixes: F2 (UnpackKernel comment now states R*local + generator round-trip rule),
