@@ -801,6 +801,8 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                     }
                     ImGui::SliderFloat("Wind Speed", &Awesome.GetClouds()->m_windSpeed, 0.0f, 40.0f, "%.1f m/s");
                     ImGui::SliderFloat("Wind Dir", &Awesome.GetClouds()->m_windDir, 0.0f, 360.0f, "%.0f deg");
+                    ImGui::SliderFloat("Mask Aggressiveness", &Awesome.GetClouds()->m_maskAggressiveness, 1.0f, 8.0f);
+                    ImGui::SliderFloat("Survival Floor", &Awesome.GetClouds()->m_survivalFloor, 0.01f, 0.5f);
 
                     {
                         Awesome::CloudGenerator* gen = Awesome.GetClouds()->GetGenerator();

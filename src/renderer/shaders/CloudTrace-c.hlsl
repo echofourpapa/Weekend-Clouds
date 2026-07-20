@@ -56,14 +56,33 @@ COMPUTE_MAIN
         tau += max(envTau, 0.0);
         if (envTau > bestTau) { bestTau = envTau; bestT = mt.tbar; bestHeight = m.heightFrac01; }
 
-        // Gabor detail kernels erode/build on top (signed).
+        // Gabor detail kernels erode/build on top (signed), with continuous LOD
+        // and bounded stochastic masking (docs/PLAN.md 4.8, C6). LOD attenuation
+        // is folded into the kernel's single exp; sub-threshold kernels are
+        // skipped; low-contribution kernels are randomly masked (reweighted 1/p)
+        // to shorten the loop, trading variance for speed (temporal cleanup, P5.2).
         uint kbegin = m.detailBegin;
         uint kend = kbegin + m.detailCount;
+        float maskAggr = g_lodParams.z;
+        float survFloor = g_lodParams.w;
         for (uint j = kbegin; j < kend; ++j)
         {
-            CloudKernel dk = UnpackKernel(g_kernels[j], m);
+            CloudKernelPacked kp = g_kernels[j];
+            CloudKernel dk = UnpackKernel(kp, m);
             KernelRayTerms dt = KernelRaySetup(dk, o, dir);
-            tau += TauKernelClamped(dk.amplitude, dt, 0.0, 0.0, t1);
+
+            float lodExp = LodExponent(dk.freqWS, dt.tbar);
+            if (lodExp < -3.912) continue;                    // LOD cull: contribution < 2%
+
+            float w = 1.0;
+            if (maskAggr > 1.0 && lodExp < -1.386)            // only mask already-small kernels
+            {
+                float p = clamp(exp(lodExp) / maskAggr, survFloor, 1.0);
+                float h = Hash01(uint3(px, (kp.b[3] & 0xFFFF) ^ (g_mode.w * 2654435761u)));
+                if (h > p) continue;
+                w = 1.0 / p;
+            }
+            tau += w * TauKernelClamped(dk.amplitude, dt, lodExp, 0.0, t1);
         }
     }
 

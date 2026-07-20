@@ -342,7 +342,8 @@ void CloudSystem::UpdateConstants(float delta)
 
     m_constants.scatterParams = { 0.85f, -0.15f, 0.7f, 3.0f };
     m_constants.ambientParams = { 1.0f, 0.3f, 1200.0f, 3200.0f };
-    m_constants.lodParams = { 2.0f * tanf(cam->verticalFOV * 0.5f) / h, 0.02f, 1.0f, 0.05f };
+    // lodParams: footprintScale (per trace pixel), lodSkipThreshold, maskAggressiveness, survivalFloor
+    m_constants.lodParams = { 2.0f * tanf(cam->verticalFOV * 0.5f) / th, 0.02f, m_maskAggressiveness, m_survivalFloor };
     m_constants.erosionParams = { 0.7f, 4.0f, 20.0f, 2000.0f };
     uint32 macroCount = m_generator->GetMacroCount();
     m_constants.counts[0] = macroCount;
