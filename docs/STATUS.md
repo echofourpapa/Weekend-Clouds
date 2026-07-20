@@ -17,7 +17,8 @@ machine — do not block on them unless a later step depends on the result.
       CloudSystem in P1.2 (see Deviations)
 
 ## Phase 1 — sky + scaffold + brute force
-- [ ] P1.1 CloudCommon.hlsli + CloudKernels.hlsli (math transliterated from validate_math.py)
+- [x] P1.1 CloudCommon.hlsli + CloudKernels.hlsli (math transliterated from validate_math.py;
+      MATH-CHECK green; no dxc in container — CloudNull-c.hlsl probe compiles on the Windows build)
 - [ ] P1.2 CloudSystem skeleton: root sig, cloudCB[3], Assets-section descriptor blocks, engine wiring
 - [ ] P1.3 SkyAtmosphere + SkyLUT-c.hlsl + sky-only composite + sun drives GetSunLight()
 - [ ] P1.4 Brute-force trace (TRACE_BRUTE), hand-placed kernels, full composite, diff debug view
