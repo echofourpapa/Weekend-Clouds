@@ -27,7 +27,11 @@ machine — do not block on them unless a later step depends on the result.
       dirty-tracked), CloudComposite-c (sky where depth==0, cloud blend gated by cloudsActive), sun
       from time-of-day drives GetSunLight(); CloudSystem now creates resources, fills null
       descriptors, binds shared tables, dispatches sky+composite
-- [ ] P1.4 Brute-force trace (TRACE_BRUTE), hand-placed kernels, full composite, diff debug view
+- [x] P1.4 Brute-force analytic trace (CloudTraceBrute-c): CloudGenerator authors a 14-macro cumulus
+      cluster on the CPU (validates the 64B packing + quat unpack), trace loops macros as pure
+      Gaussians with the clamped closed form, writes scatter (rgb,inscatter / a,transmittance) +
+      cloud depth; composite blends it; debug views 3 (transmittance) and 5 (analytic-vs-256-step
+      march diff, near-black == correct). CloudNull probe removed.
 
 ## Phase 2 — traversal
 - [ ] P2.1 Persistent buffers + CloudTileBin-c.hlsl
@@ -76,6 +80,10 @@ machine — do not block on them unless a later step depends on the result.
   hook (after deferred), so deferred consumes it next frame. AnimateLights only touches point lights,
   so it persists. Full IBL/exposure unification is P4.4.
 
+- P1.4: cloud trace targets (scatter RGBA16F, cloudDepth R16F) are sized to the window at StartUp;
+  a window resize is not yet handled for cloud targets (no Resize hook). Fine for fixed-res R&D /
+  perf runs; P5 formalises trace sizing (half-res). Brute trace is full-res.
+
 ## User-verification queue
 (steps finished in-code, awaiting a Windows build/run report)
 
@@ -83,3 +91,8 @@ machine — do not block on them unless a later step depends on the result.
   expect link success; after a NuGet restore + rebuild, dxcompiler.dll/dxil.dll appear in bin/Debug
 - P0.3: run the app, open the Info panel — expect "RT tier 1.1 | SM 6.8 | R11G11B10 UAV loads yes"
   on the 4070
+- P1.3/P1.4: run the app — expect a blue sky with a sun that moves as the Time of Day slider changes,
+  and ~14 soft cumulus blobs. Set debug view 5 (analytic-vs-march) → should be near-black everywhere,
+  INCLUDING when the camera flies inside a blob (validates the clamped erf integral). Debug view 3
+  shows transmittance. (Debug-view UI combo lands with the fuller ImGui panel; until then set
+  m_debugView in code or via the reload path.)

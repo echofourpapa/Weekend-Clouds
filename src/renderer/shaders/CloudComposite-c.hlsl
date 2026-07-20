@@ -16,6 +16,13 @@ COMPUTE_MAIN
     uint2 px = IN.DispatchThreadID.xy;
     if (px.x >= (uint)g_outputSize.x || px.y >= (uint)g_outputSize.y) return;
 
+    // Debug views replace the frame with the trace's visualization (full-res).
+    if (g_mode.x != 0 && g_skyParams.w > 0.5)
+    {
+        g_hdrOutput[px] = float4(g_cloudScatter[px].rgb, 1.0);
+        return;
+    }
+
     float depth = g_sceneDepth[px];
     float3 dir = CloudRayDir(float2(px), g_outputSize.zw);
 

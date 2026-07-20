@@ -1,6 +1,7 @@
 #include "CloudSystem.h"
 #include "CloudShaderCompiler.h"
 #include "SkyAtmosphere.h"
+#include "CloudGenerator.h"
 #include "Awesome.h"
 #include "Compute.h"
 #include "Deferred.h"
@@ -17,11 +18,13 @@ CloudSystem::CloudSystem(AwesomeGraphics* Awesome)
     : m_Awesome(Awesome)
     , m_shaderCompiler(new CloudShaderCompiler(Awesome))
     , m_sky(new SkyAtmosphere(Awesome, this))
+    , m_generator(new CloudGenerator(Awesome, this))
 {
 }
 
 CloudSystem::~CloudSystem()
 {
+    delete m_generator;
     delete m_sky;
     delete m_shaderCompiler;
 }
@@ -172,15 +175,42 @@ bool CloudSystem::StartUp()
 
     if (!m_sky->StartUp())
         return false;
+    if (!m_generator->StartUp())
+        return false;
 
-    // Composite PSO
+    // Trace targets (P1.4 is full-res; P5 moves the trace to 1280x720). Sized to
+    // the current window; a window resize is not yet handled for cloud targets.
+    m_traceW = m_Awesome->GetWidth();
+    m_traceH = m_Awesome->GetHeight();
+    m_scatterTex = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud Scatter");
+    m_cloudDepthTex = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16_FLOAT, L"Cloud Depth");
+    if (!m_scatterTex || !m_cloudDepthTex) return false;
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
+        srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srv.Texture2D.MipLevels = 1;
+        srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        WriteSRV(SRV_Scatter, m_scatterTex, &srv);
+
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uav = {};
+        uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        uav.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        WriteUAV(UAV_Scatter, m_scatterTex, &uav);
+        uav.Format = DXGI_FORMAT_R16_FLOAT;
+        WriteUAV(UAV_CloudDepth, m_cloudDepthTex, &uav);
+    }
+
+    // PSOs
     {
         std::vector<D3D_SHADER_MACRO*> perms;
         perms.push_back(new D3D_SHADER_MACRO[1]{ { NULL, NULL } });
-        uint32 shader = m_Awesome->GetComputeSystem()->CompileShader(L"CloudComposite-c", perms);
-        if (shader == invalidIndex32) return false;
-        m_compositePSO = m_Awesome->GetComputeSystem()->CreatePipeline(shader, m_rootSignature);
-        if (m_compositePSO == (uint32)-1) return false;
+        uint32 comp = m_Awesome->GetComputeSystem()->CompileShader(L"CloudComposite-c", perms);
+        uint32 brute = m_Awesome->GetComputeSystem()->CompileShader(L"CloudTraceBrute-c", perms);
+        if (comp == invalidIndex32 || brute == invalidIndex32) return false;
+        m_compositePSO = m_Awesome->GetComputeSystem()->CreatePipeline(comp, m_rootSignature);
+        m_brutePSO = m_Awesome->GetComputeSystem()->CreatePipeline(brute, m_rootSignature);
+        if (m_compositePSO == (uint32)-1 || m_brutePSO == (uint32)-1) return false;
     }
 
     return true;
@@ -188,7 +218,10 @@ bool CloudSystem::StartUp()
 
 bool CloudSystem::TearDown()
 {
+    m_generator->TearDown();
     m_sky->TearDown();
+    SafeRelease(m_scatterTex);
+    SafeRelease(m_cloudDepthTex);
     for (uint32 i = 0; i < c_frameBufferCount; ++i)
     {
         if (m_constantBuffer[i])
@@ -244,7 +277,9 @@ void CloudSystem::UpdateConstants(float delta)
 
     float w = (float)m_Awesome->GetWidth();
     float h = (float)m_Awesome->GetHeight();
-    m_constants.traceSize = { w, h, 1.0f / w, 1.0f / h };
+    float tw = (float)(m_traceW ? m_traceW : m_Awesome->GetWidth());
+    float th = (float)(m_traceH ? m_traceH : m_Awesome->GetHeight());
+    m_constants.traceSize = { tw, th, 1.0f / tw, 1.0f / th };
     m_constants.outputSize = { w, h, 1.0f / w, 1.0f / h };
 
     m_constants.mode[0] = m_debugView;
@@ -256,8 +291,12 @@ void CloudSystem::UpdateConstants(float delta)
     m_constants.ambientParams = { 1.0f, 0.3f, 1200.0f, 3200.0f };
     m_constants.lodParams = { 2.0f * tanf(cam->verticalFOV * 0.5f) / h, 0.02f, 1.0f, 0.05f };
     m_constants.erosionParams = { 0.7f, 4.0f, 20.0f, 2000.0f };
-    m_constants.skyParams = { m_turbidity, 0.0f, 0.0f, 0.0f };   // .w cloudsActive = 0 until trace (P1.4)
-    m_constants.counts[0] = 0; m_constants.counts[1] = 0;
+    uint32 macroCount = m_generator->GetMacroCount();
+    m_constants.counts[0] = macroCount;
+    m_constants.counts[1] = m_generator->GetKernelCount();
+    m_constants.counts[2] = 0; m_constants.counts[3] = 0;
+    float cloudsActive = macroCount > 0 ? 1.0f : 0.0f;
+    m_constants.skyParams = { m_turbidity, 0.0f, 0.0f, cloudsActive };
 
     memcpy(m_constantMapped[m_Awesome->GetCurrentFrameIndex()], &m_constants, sizeof(CloudConstants));
 
@@ -307,6 +346,9 @@ void CloudSystem::Render(float delta)
         m_Awesome->Device()->CreateUnorderedAccessView(m_Awesome->GetDeferredRenderer()->GetOutputBuffer(), nullptr, &ouav, m_uavBlocks[f][0][UAV_HdrOut].cpuHandle);
     }
 
+    // Upload the authored macro cluster once (records on the open command list).
+    m_generator->EnsureUploaded();
+
     BindCommon();
 
     // Sky LUTs (regenerate only when dirty).
@@ -315,15 +357,31 @@ void CloudSystem::Render(float delta)
         m_sky->Render();
     }
 
-    // Composite: sky behind geometry + (later) cloud blend, in-place on the
-    // deferred HDR output (which is already in UNORDERED_ACCESS here).
+    // Scene depth is read as an SRV by both the trace and the composite; move it
+    // out of DEPTH_WRITE for the duration of the cloud passes, then restore.
+    m_Awesome->TransitionResource(m_Awesome->GetDepthStencilBuffer(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    // Brute-force analytic trace -> scatter (rgb inscatter, a transmittance) + depth.
+    if (m_generator->GetMacroCount() > 0)
+    {
+        PIXScopedEvent(m_Awesome->GetCommandList(), 0, "Cloud Trace (brute)");
+        m_Awesome->TransitionResource(m_scatterTex, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        m_Awesome->TransitionResource(m_cloudDepthTex, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        m_Awesome->GetComputeSystem()->SetPSO(m_brutePSO);
+        m_Awesome->GetCommandList()->Dispatch((m_traceW + 7) / 8, (m_traceH + 7) / 8, 1);
+        m_Awesome->TransitionResource(m_scatterTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        m_Awesome->TransitionResource(m_cloudDepthTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    }
+
+    // Composite: sky behind geometry + cloud blend, in-place on the deferred
+    // HDR output (which is already in UNORDERED_ACCESS here).
     {
         PIXScopedEvent(m_Awesome->GetCommandList(), 0, "Cloud Composite");
-        m_Awesome->TransitionResource(m_Awesome->GetDepthStencilBuffer(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         m_Awesome->GetComputeSystem()->SetPSO(m_compositePSO);
         uint32 gx = ((uint32)m_constants.outputSize.x + 7) / 8;
         uint32 gy = ((uint32)m_constants.outputSize.y + 7) / 8;
         m_Awesome->GetCommandList()->Dispatch(gx, gy, 1);
-        m_Awesome->TransitionResource(m_Awesome->GetDepthStencilBuffer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
     }
+
+    m_Awesome->TransitionResource(m_Awesome->GetDepthStencilBuffer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
 }

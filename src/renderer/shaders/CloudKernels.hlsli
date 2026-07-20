@@ -115,6 +115,33 @@ CloudKernel UnpackKernel(CloudKernelPacked p, CloudMacro parent)
     return k;
 }
 
+// A macro treated directly as a pure-Gaussian primitive (brute path / macro
+// envelope integration). Detail Gabor kernels use UnpackKernel instead.
+CloudKernel KernelFromMacro(CloudMacro m)
+{
+    CloudKernel k;
+    k.posWS = m.position;
+    QuatToRows(float4(UnpackSnorm16x2(m.quatXY), UnpackSnorm16x2(m.quatZW)), k.row0, k.row1, k.row2);
+    k.invSigma = 1.0 / max(m.sigma, 1e-3);
+    k.amplitude = m.amplitude;
+    k.freqWS = float3(0, 0, 0);
+    k.phaseTurns = 0.0;
+    k.octave = 0;
+    k.shadowVisible = true;
+    k.seed16 = m.seed & 0xFFFF;
+    return k;
+}
+
+// Raw macro density at a world point (reference march / erosion bounds).
+float MacroDensity(CloudMacro m, float3 posWS)
+{
+    float3 r0, r1, r2;
+    QuatToRows(float4(UnpackSnorm16x2(m.quatXY), UnpackSnorm16x2(m.quatZW)), r0, r1, r2);
+    float3 rel = posWS - m.position;
+    float3 p = float3(dot(r0, rel), dot(r1, rel), dot(r2, rel)) / max(m.sigma, 1e-3);
+    return m.amplitude * exp(-0.5 * dot(p, p));
+}
+
 // ---------------------------------------------------------------------------
 // erf / erfinv (validate_math.py: erf_as, erfinv_giles)
 // ---------------------------------------------------------------------------

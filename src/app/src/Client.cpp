@@ -774,6 +774,16 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
 
                     ImGui::Checkbox("Clouds Enabled", &Awesome.GetClouds()->m_enabled);
                     ImGui::SliderFloat("Time of Day", &Awesome.GetClouds()->m_timeOfDay, 0.0f, 24.0f, "%.2f h");
+                    ImGui::SliderFloat("Turbidity", &Awesome.GetClouds()->m_turbidity, 1.0f, 10.0f);
+                    ImGui::SliderFloat("Sun Intensity", &Awesome.GetClouds()->m_sunIntensity, 0.0f, 80.0f);
+                    {
+                        const char* dbgItems[] = { "Off", "Heatmap", "Freq Bands", "Transmittance",
+                            "Cloud Depth", "Analytic vs March", "Baked vs Ref", "Mask Rate",
+                            "History Reject", "Min Tau", "Tile Count", "Cache Slice" };
+                        int dbg = (int)Awesome.GetClouds()->m_debugView;
+                        if (ImGui::Combo("Cloud Debug View", &dbg, dbgItems, IM_ARRAYSIZE(dbgItems)))
+                            Awesome.GetClouds()->m_debugView = (uint32)dbg;
+                    }
                     if (ImGui::Button("Reload Cloud Shaders"))
                         Awesome.GetClouds()->ReloadShaders();
 
