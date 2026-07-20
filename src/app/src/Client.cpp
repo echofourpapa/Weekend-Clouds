@@ -777,6 +777,12 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                     ImGui::SliderFloat("Turbidity", &Awesome.GetClouds()->m_turbidity, 1.0f, 10.0f);
                     ImGui::SliderFloat("Sun Intensity", &Awesome.GetClouds()->m_sunIntensity, 0.0f, 80.0f);
                     {
+                        const char* travItems[] = { "Tiled", "RQ Macro", "RQ Kernel", "Brute" };
+                        int trav = (int)Awesome.GetClouds()->m_traversalMode;
+                        if (ImGui::Combo("Traversal", &trav, travItems, IM_ARRAYSIZE(travItems)))
+                            Awesome.GetClouds()->m_traversalMode = (uint32)trav;
+                    }
+                    {
                         const char* dbgItems[] = { "Off", "Heatmap", "Freq Bands", "Transmittance",
                             "Cloud Depth", "Analytic vs March", "Baked vs Ref", "Mask Rate",
                             "History Reject", "Min Tau", "Tile Count", "Cache Slice" };

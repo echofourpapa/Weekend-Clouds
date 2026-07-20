@@ -27,6 +27,18 @@ namespace Awesome
         UAV_HistDepth, UAV_HdrOut, UAV_MacroCount, UAV_MacroGrid, UAV_Count
     };
 
+    static const uint32 c_cloudTilePx = 16;
+    static const uint32 c_cloudMaxTileMacros = 64;
+
+    // CPU mirror of CloudTile in CloudTileBin-c.hlsl / CloudTrace-c.hlsl.
+    struct CloudTile
+    {
+        uint32 count;
+        uint32 pad[3];
+        uint32 macroIdx[c_cloudMaxTileMacros];
+    };
+    static_assert(sizeof(CloudTile) == 272, "CloudTile must be 272 bytes");
+
     // CPU mirror of the CloudConstants cbuffer in CloudCommon.hlsli (docs/PLAN.md 3.4).
     struct CloudConstants
     {
@@ -83,7 +95,7 @@ namespace Awesome
         float m_sunIntensity = 20.0f;
         uint32 m_debugView = 0;
         uint32 m_lightMode = 0;
-        uint32 m_traversalMode = 3;
+        uint32 m_traversalMode = 0;   // 0 tiled (primary), 3 brute (A/B)
 
     private:
         void UpdateConstants(float delta);
@@ -98,8 +110,12 @@ namespace Awesome
         ID3D12RootSignature* m_rootSignature = nullptr;
         ID3D12Resource* m_scatterTex = nullptr;    // RGBA16F: rgb inscatter, a transmittance
         ID3D12Resource* m_cloudDepthTex = nullptr; // R16F
+        ID3D12Resource* m_tileBuf = nullptr;       // per-tile macro lists
         uint32 m_brutePSO = (uint32)-1;
+        uint32 m_binPSO = (uint32)-1;
+        uint32 m_tracePSO = (uint32)-1;
         uint32 m_traceW = 0, m_traceH = 0;
+        uint32 m_tileCountX = 0, m_tileCountY = 0;
 
         ID3D12Resource* m_constantBuffer[c_frameBufferCount] = {};
         uint8* m_constantMapped[c_frameBufferCount] = {};

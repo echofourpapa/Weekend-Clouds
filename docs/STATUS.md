@@ -34,9 +34,12 @@ machine — do not block on them unless a later step depends on the result.
       march diff, near-black == correct). CloudNull probe removed.
 
 ## Phase 2 — traversal
-- [ ] P2.1 Persistent buffers + CloudTileBin-c.hlsl
-- [ ] P2.2 Tiled trace + visited/surviving heatmaps + brute-vs-tiled parity
-- [ ] P2.3 RTScene + TRACE_RQ variant (guarded on m_rtSupported)
+- [x] P2.1 Tile buffer (CloudTile 272B, per 16x16 tile) + CloudTileBin-c wired (bin PSO, per-frame
+      dispatch, UAV<->SRV cycle); counts.z/w = tile grid
+- [x] P2.2 Tiled trace (CloudTrace-c, macros-only, must match brute pixel-for-pixel) + traversal-mode
+      combo (Tiled default / Brute A/B; RQ modes fall back to brute until P2.3) + heatmap/tile-count
+      debug views
+- [ ] P2.3 RTScene + CloudTraceRQ-c entry (guarded on m_rtSupported)
 
 ## Phase 3 — generation
 - [ ] P3.1 Weather/GenMacro/GenScan/GenDetail/GenGrid + regen orchestration + L2 readout
@@ -100,6 +103,8 @@ machine — do not block on them unless a later step depends on the result.
   expect link success; after a NuGet restore + rebuild, dxcompiler.dll/dxil.dll appear in bin/Debug
 - P0.3: run the app, open the Info panel — expect "RT tier 1.1 | SM 6.8 | R11G11B10 UAV loads yes"
   on the 4070
+- P2.2: run the app — the Traversal combo should show identical clouds for "Tiled" vs "Brute"
+  (regression gate); debug view 1 (Heatmap) / 10 (Tile Count) show per-tile macro counts.
 - P1.3/P1.4: run the app — expect a blue sky with a sun that moves as the Time of Day slider changes,
   and ~14 soft cumulus blobs. Set debug view 5 (analytic-vs-march) → should be near-black everywhere,
   INCLUDING when the camera flies inside a blob (validates the clamped erf integral). Debug view 3

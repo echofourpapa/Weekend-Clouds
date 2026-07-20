@@ -182,9 +182,41 @@ bool CloudSystem::StartUp()
     // the current window; a window resize is not yet handled for cloud targets.
     m_traceW = m_Awesome->GetWidth();
     m_traceH = m_Awesome->GetHeight();
+    m_tileCountX = (m_traceW + c_cloudTilePx - 1) / c_cloudTilePx;
+    m_tileCountY = (m_traceH + c_cloudTilePx - 1) / c_cloudTilePx;
     m_scatterTex = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud Scatter");
     m_cloudDepthTex = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16_FLOAT, L"Cloud Depth");
     if (!m_scatterTex || !m_cloudDepthTex) return false;
+
+    // Tile buffer: one CloudTile per 16x16 tile (macro lists), rebuilt each frame.
+    {
+        uint32 tiles = m_tileCountX * m_tileCountY;
+        D3D12_RESOURCE_DESC desc = {};
+        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Width = (uint64)tiles * sizeof(CloudTile);
+        desc.Height = 1; desc.DepthOrArraySize = 1; desc.MipLevels = 1;
+        desc.SampleDesc.Count = 1;
+        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        desc.Format = DXGI_FORMAT_UNKNOWN;
+        m_tileBuf = m_Awesome->CreateBuffer(desc, L"Cloud Tile Buffer", D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        if (!m_tileBuf) return false;
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC tsrv = {};
+        tsrv.Format = DXGI_FORMAT_UNKNOWN;
+        tsrv.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        tsrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        tsrv.Buffer.NumElements = tiles;
+        tsrv.Buffer.StructureByteStride = sizeof(CloudTile);
+        WriteSRV(SRV_Tile, m_tileBuf, &tsrv);
+
+        D3D12_UNORDERED_ACCESS_VIEW_DESC tuav = {};
+        tuav.Format = DXGI_FORMAT_UNKNOWN;
+        tuav.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        tuav.Buffer.NumElements = tiles;
+        tuav.Buffer.StructureByteStride = sizeof(CloudTile);
+        WriteUAV(UAV_Tile, m_tileBuf, &tuav);
+    }
     {
         D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
         srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
@@ -209,10 +241,14 @@ bool CloudSystem::StartUp()
         perms.push_back(new D3D_SHADER_MACRO[1]{ { NULL, NULL } });
         uint32 comp = m_Awesome->GetComputeSystem()->CompileShader(L"CloudComposite-c", perms);
         uint32 brute = m_Awesome->GetComputeSystem()->CompileShader(L"CloudTraceBrute-c", perms);
-        if (comp == invalidIndex32 || brute == invalidIndex32) return false;
+        uint32 bin = m_Awesome->GetComputeSystem()->CompileShader(L"CloudTileBin-c", perms);
+        uint32 trace = m_Awesome->GetComputeSystem()->CompileShader(L"CloudTrace-c", perms);
+        if (comp == invalidIndex32 || brute == invalidIndex32 || bin == invalidIndex32 || trace == invalidIndex32) return false;
         m_compositePSO = m_Awesome->GetComputeSystem()->CreatePipeline(comp, m_rootSignature);
         m_brutePSO = m_Awesome->GetComputeSystem()->CreatePipeline(brute, m_rootSignature);
-        if (m_compositePSO == (uint32)-1 || m_brutePSO == (uint32)-1) return false;
+        m_binPSO = m_Awesome->GetComputeSystem()->CreatePipeline(bin, m_rootSignature);
+        m_tracePSO = m_Awesome->GetComputeSystem()->CreatePipeline(trace, m_rootSignature);
+        if (m_compositePSO == (uint32)-1 || m_brutePSO == (uint32)-1 || m_binPSO == (uint32)-1 || m_tracePSO == (uint32)-1) return false;
     }
 
     return true;
@@ -224,6 +260,7 @@ bool CloudSystem::TearDown()
     m_sky->TearDown();
     SafeRelease(m_scatterTex);
     SafeRelease(m_cloudDepthTex);
+    SafeRelease(m_tileBuf);
     for (uint32 i = 0; i < c_frameBufferCount; ++i)
     {
         if (m_constantBuffer[i])
@@ -296,7 +333,7 @@ void CloudSystem::UpdateConstants(float delta)
     uint32 macroCount = m_generator->GetMacroCount();
     m_constants.counts[0] = macroCount;
     m_constants.counts[1] = m_generator->GetKernelCount();
-    m_constants.counts[2] = 0; m_constants.counts[3] = 0;
+    m_constants.counts[2] = m_tileCountX; m_constants.counts[3] = m_tileCountY;
     float cloudsActive = macroCount > 0 ? 1.0f : 0.0f;
     m_constants.skyParams = { m_turbidity, 0.0f, 0.0f, cloudsActive };
 
@@ -363,14 +400,28 @@ void CloudSystem::Render(float delta)
     // out of DEPTH_WRITE for the duration of the cloud passes, then restore.
     m_Awesome->TransitionResource(m_Awesome->GetDepthStencilBuffer(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
-    // Brute-force analytic trace -> scatter (rgb inscatter, a transmittance) + depth.
+    // Trace -> scatter (rgb inscatter, a transmittance) + depth. Tiled path
+    // (bin + tiled trace) or the brute A/B path, per traversalMode.
     if (m_generator->GetMacroCount() > 0)
     {
-        PIXScopedEvent(m_Awesome->GetCommandList(), 0, "Cloud Trace (brute)");
+        bool tiled = (m_traversalMode == 0);
+        ID3D12GraphicsCommandList* cl = m_Awesome->GetCommandList();
+
+        if (tiled)
+        {
+            PIXScopedEvent(cl, 0, "Cloud Tile Bin");
+            m_Awesome->TransitionResource(m_tileBuf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            m_Awesome->GetComputeSystem()->SetPSO(m_binPSO);
+            uint32 tiles = m_tileCountX * m_tileCountY;
+            cl->Dispatch((tiles + 63) / 64, 1, 1);
+            m_Awesome->TransitionResource(m_tileBuf, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        }
+
+        PIXScopedEvent(cl, 0, tiled ? "Cloud Trace (tiled)" : "Cloud Trace (brute)");
         m_Awesome->TransitionResource(m_scatterTex, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         m_Awesome->TransitionResource(m_cloudDepthTex, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        m_Awesome->GetComputeSystem()->SetPSO(m_brutePSO);
-        m_Awesome->GetCommandList()->Dispatch((m_traceW + 7) / 8, (m_traceH + 7) / 8, 1);
+        m_Awesome->GetComputeSystem()->SetPSO(tiled ? m_tracePSO : m_brutePSO);
+        cl->Dispatch((m_traceW + 7) / 8, (m_traceH + 7) / 8, 1);
         m_Awesome->TransitionResource(m_scatterTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         m_Awesome->TransitionResource(m_cloudDepthTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     }
