@@ -13,7 +13,8 @@ machine — do not block on them unless a later step depends on the result.
       build without thirdparty/aftermath)
 - [x] P0.3 Device5/CommandList4 QI + CheckFeatureSupport (RT tier, SM, typed UAV loads) + caps readout
       (Info panel, ImGui)
-- [ ] P0.4 CloudShaderCompiler (DXC hot reload, Debug-only) + ImGui reload button
+- [x] P0.4 CloudShaderCompiler (DXC hot reload, Debug-only). The ImGui reload button lands with
+      CloudSystem in P1.2 (see Deviations)
 
 ## Phase 1 — sky + scaffold + brute force
 - [ ] P1.1 CloudCommon.hlsli + CloudKernels.hlsli (math transliterated from validate_math.py)
@@ -51,7 +52,9 @@ machine — do not block on them unless a later step depends on the result.
 ## Deviations from spec
 (record any adaptation made when an anchor/contract in PLAN.md didn't match reality)
 
-- none yet
+- P0.4: the "Reload cloud shaders" ImGui button is deferred to P1.2 — CloudSystem is the only
+  allowed god-class hook (PLAN §6.3) and it doesn't exist yet; CloudShaderCompiler will be owned by
+  CloudSystem, which exposes the reload (FlushGPU + PSO rebuild) and the button.
 
 ## User-verification queue
 (steps finished in-code, awaiting a Windows build/run report)
