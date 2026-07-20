@@ -14,8 +14,8 @@ namespace Awesome
         float position[3];
         float amplitude;
         float sigma[3];
-        uint32 quatXY;      // quat x,y as 2x snorm16
-        uint32 quatZW;      // quat z,w as 2x snorm16 (w >= 0)
+        uint32 quatXY;
+        uint32 quatZW;
         uint32 detailBegin;
         uint32 detailCount;
         uint32 seed;
@@ -30,14 +30,18 @@ namespace Awesome
     struct CloudKernelPacked { uint32 a[4]; uint32 b[4]; };
     static_assert(sizeof(CloudKernelPacked) == 32, "CloudKernelPacked must be 32 bytes");
 
-    // Owns the macro/kernel/count buffers. In P1.4 it authors a static test
-    // cluster of macros on the CPU (proving the packing + analytic math);
-    // GPU procedural generation replaces the CPU authoring in Phase 3.
+    // Procedural cloudscape generation. Generation is CPU-side and amortized (it
+    // only reruns when parameters change), so it does not violate C4 (the
+    // per-frame path stays allocation-free); wind is phase-animated in the trace.
+    // Macros come from a coverage FBM over a placement grid; each macro spawns
+    // Gabor detail kernels across octaves in a fixed slot range [i*K, i*K+K).
     class CloudGenerator
     {
     public:
         static const uint32 c_maxMacros = 8192;
         static const uint32 c_maxKernels = 400 * 1024;
+        static const uint32 c_gridDim = 128;             // placement cells per axis
+        static const float  c_cellMeters;                // world size of one cell
 
         CloudGenerator(AwesomeGraphics* Awesome, CloudSystem* clouds);
         ~CloudGenerator();
@@ -45,23 +49,35 @@ namespace Awesome
         bool StartUp();
         bool TearDown();
 
-        // Uploads the authored CPU macros on the first frame (needs an open
-        // command list); transitions the macro buffer to a shader resource.
+        // Uploads freshly generated buffers on the first frame after a change.
         void EnsureUploaded();
+        void RequestRegen() { m_dirty = true; }
 
         uint32 GetMacroCount() const { return m_macroCount; }
         uint32 GetKernelCount() const { return m_kernelCount; }
 
+        // ImGui-facing generation params.
+        float m_coverage = 0.5f;
+        float m_cloudType = 0.6f;
+        uint32 m_seed = 1337;
+        uint32 m_octaves = 4;              // 1..4
+        uint32 m_kernelsPerMacro = 32;     // total detail kernels per macro
+        float m_cloudBaseY = 1400.0f;
+        float m_cloudTopY = 3000.0f;
+
     private:
-        void AuthorBruteScene();
+        void Regenerate();                 // CPU: fill m_cpuMacros + m_cpuKernels
 
         AwesomeGraphics* m_Awesome;
         CloudSystem* m_clouds;
         ID3D12Resource* m_macroBuf = nullptr;
         ID3D12Resource* m_kernelBuf = nullptr;
         std::vector<CloudMacro> m_cpuMacros;
+        std::vector<CloudKernelPacked> m_cpuKernels;
         uint32 m_macroCount = 0;
         uint32 m_kernelCount = 0;
+        bool m_dirty = true;
         bool m_uploaded = false;
+        bool m_inReadState = false;   // buffers currently in NON_PIXEL (vs COPY_DEST)
     };
 }

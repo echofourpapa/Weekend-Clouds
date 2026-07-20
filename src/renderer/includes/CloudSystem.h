@@ -87,12 +87,15 @@ namespace Awesome
         ID3D12Resource* CreateTex2D(uint32 w, uint32 h, DXGI_FORMAT fmt, const wchar_t* name);
 
         ID3D12RootSignature* GetRootSignature() const { return m_rootSignature; }
+        CloudGenerator* GetGenerator() const { return m_generator; }
 
         // --- ImGui-facing state ---
         bool  m_enabled = true;
         float m_timeOfDay = 14.0f;
         float m_turbidity = 3.0f;
         float m_sunIntensity = 20.0f;
+        float m_windSpeed = 8.0f;     // m/s
+        float m_windDir = 30.0f;      // degrees
         uint32 m_debugView = 0;
         uint32 m_lightMode = 0;
         uint32 m_traversalMode = 0;   // 0 tiled (primary), 3 brute (A/B)

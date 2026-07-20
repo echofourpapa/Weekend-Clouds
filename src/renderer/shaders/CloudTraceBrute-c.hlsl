@@ -17,7 +17,7 @@ COMPUTE_MAIN
     if (px.x >= (uint)g_traceSize.x || px.y >= (uint)g_traceSize.y) return;
 
     float2 uv = (px + 0.5) * g_traceSize.zw;
-    float3 o = g_camPosWS.xyz;
+    float3 o = g_camPosWS.xyz + g_windOffset.xyz;   // whole-field advection (matches tiled/binning)
     float3 dir = CloudRayDir(float2(px), g_traceSize.zw);
     float depth = g_sceneDepth[px];
     float t1 = CloudGeomT(uv, depth, dir);

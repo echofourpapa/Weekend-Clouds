@@ -42,8 +42,14 @@ machine — do not block on them unless a later step depends on the result.
 - [ ] P2.3 RTScene + CloudTraceRQ-c entry (guarded on m_rtSupported)
 
 ## Phase 3 — generation
-- [ ] P3.1 Weather/GenMacro/GenScan/GenDetail/GenGrid + regen orchestration + L2 readout
-- [ ] P3.2 Wind (phase velocity + advection offset)
+- [x] P3.1 Procedural generation (CPU, amortized on regen — C4-compliant since the per-frame path
+      stays allocation-free): coverage FBM over a 128x128 grid places flattened macros; each spawns
+      K Gabor detail kernels across octaves (signed erosion, bounded, ~zero-mean) in fixed slot
+      ranges [i*K, i*K+K). Both buffers upload on regen (NON_PIXEL<->COPY_DEST re-upload handled).
+      Tiled trace now integrates macro envelope + its detail range (UnpackKernel path exercised).
+      ImGui: coverage/type/seed/octaves/kernels-per-macro/Regenerate + kernel-count + L2 readout.
+- [x] P3.2 Wind: whole-field advection (ray-origin += windOffset, consistent with binning's
+      macro-centre shift) + per-octave phase drift in the CB (KernelRaySetup applies it). No regen.
 
 ## Phase 4 — lighting
 - [ ] P4.1 Static-camera accumulation mode
@@ -103,6 +109,11 @@ machine — do not block on them unless a later step depends on the result.
   expect link success; after a NuGet restore + rebuild, dxcompiler.dll/dxil.dll appear in bin/Debug
 - P0.3: run the app, open the Info panel — expect "RT tier 1.1 | SM 6.8 | R11G11B10 UAV loads yes"
   on the 4070
+- P3: run the app — expect a full procedural cloudscape (coverage/type/octaves/seed sliders +
+  Regenerate) that drifts and churns with wind. NOTE: no LOD/masking/half-res yet, so at 1080p the
+  tiled trace with detail kernels may run ~3-10 fps (hundreds of kernels/pixel) — Phase 5 fixes this.
+  Brute A/B is now a macros-only (envelope) baseline and is slow with many macros; the analytic-vs-
+  march debug (brute) is only practical at low coverage (few macros).
 - P2.2: run the app — the Traversal combo should show identical clouds for "Tiled" vs "Brute"
   (regression gate); debug view 1 (Heatmap) / 10 (Tile Count) show per-tile macro counts.
 - P1.3/P1.4: run the app — expect a blue sky with a sun that moves as the Time of Day slider changes,

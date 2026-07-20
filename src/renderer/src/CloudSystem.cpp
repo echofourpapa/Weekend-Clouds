@@ -326,6 +326,14 @@ void CloudSystem::UpdateConstants(float delta)
     m_constants.mode[2] = m_traversalMode;
     m_constants.mode[3] = (uint32)m_Awesome->GetCurrentFrame();
 
+    // Wind: whole-field advection (ray-origin offset) + per-octave phase drift.
+    // Both are per-frame in the trace; neither triggers a regen.
+    float wr = m_windDir * 0.0174533f;
+    m_constants.windOffset.x += cosf(wr) * m_windSpeed * delta;
+    m_constants.windOffset.z += sinf(wr) * m_windSpeed * delta;
+    m_constants.windOffset.w = m_windSpeed;
+    m_constants.windPhaseVel = { 0.05f, 0.12f, 0.25f, 0.5f };
+
     m_constants.scatterParams = { 0.85f, -0.15f, 0.7f, 3.0f };
     m_constants.ambientParams = { 1.0f, 0.3f, 1200.0f, 3200.0f };
     m_constants.lodParams = { 2.0f * tanf(cam->verticalFOV * 0.5f) / h, 0.02f, 1.0f, 0.05f };
@@ -364,6 +372,9 @@ void CloudSystem::Render(float delta)
         return;
 
     PIXScopedEvent(m_Awesome->GetCommandList(), 0, "Clouds");
+
+    // Regenerate (CPU, on param change) + upload before constants so counts are fresh.
+    m_generator->EnsureUploaded();
     UpdateConstants(delta);
 
     uint32 f = CurBlock();
@@ -384,9 +395,6 @@ void CloudSystem::Render(float delta)
         ouav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         m_Awesome->Device()->CreateUnorderedAccessView(m_Awesome->GetDeferredRenderer()->GetOutputBuffer(), nullptr, &ouav, m_uavBlocks[f][0][UAV_HdrOut].cpuHandle);
     }
-
-    // Upload the authored macro cluster once (records on the open command list).
-    m_generator->EnsureUploaded();
 
     BindCommon();
 

@@ -9,6 +9,7 @@
 #include "ScreenSpaceShadows.h"
 #include "DirectionalShadows.h"
 #include "CloudSystem.h"
+#include "CloudGenerator.h"
 #include "Deferred.h"
 #include "PostFX.h"
 #include "AwesomeProfiler.h"
@@ -790,6 +791,28 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                         if (ImGui::Combo("Cloud Debug View", &dbg, dbgItems, IM_ARRAYSIZE(dbgItems)))
                             Awesome.GetClouds()->m_debugView = (uint32)dbg;
                     }
+                    ImGui::SliderFloat("Wind Speed", &Awesome.GetClouds()->m_windSpeed, 0.0f, 40.0f, "%.1f m/s");
+                    ImGui::SliderFloat("Wind Dir", &Awesome.GetClouds()->m_windDir, 0.0f, 360.0f, "%.0f deg");
+
+                    {
+                        Awesome::CloudGenerator* gen = Awesome.GetClouds()->GetGenerator();
+                        bool regen = false;
+                        regen |= ImGui::SliderFloat("Coverage", &gen->m_coverage, 0.0f, 1.0f);
+                        regen |= ImGui::SliderFloat("Cloud Type", &gen->m_cloudType, 0.0f, 1.0f);
+                        int oct = (int)gen->m_octaves;
+                        if (ImGui::SliderInt("Octaves", &oct, 1, 4)) { gen->m_octaves = (uint32)oct; regen = true; }
+                        int kpm = (int)gen->m_kernelsPerMacro;
+                        if (ImGui::SliderInt("Kernels/Macro", &kpm, 4, 64)) { gen->m_kernelsPerMacro = (uint32)kpm; regen = true; }
+                        int seed = (int)gen->m_seed;
+                        if (ImGui::InputInt("Seed", &seed)) { gen->m_seed = (uint32)seed; regen = true; }
+                        if (ImGui::Button("Regenerate")) regen = true;
+                        if (regen) gen->RequestRegen();
+
+                        float mb = gen->GetKernelCount() * 32.0f / (1024.0f * 1024.0f);
+                        ImGui::Text("Macros: %u  Kernels: %u  (%.1f MB of 16 MB L2 budget)",
+                            gen->GetMacroCount(), gen->GetKernelCount(), mb);
+                    }
+
                     if (ImGui::Button("Reload Cloud Shaders"))
                         Awesome.GetClouds()->ReloadShaders();
 

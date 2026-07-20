@@ -6,7 +6,8 @@
 
 #include "CloudKernels.hlsli"
 
-StructuredBuffer<CloudMacro> g_macros : register(t1);
+StructuredBuffer<CloudKernelPacked> g_kernels : register(t0);
+StructuredBuffer<CloudMacro>        g_macros  : register(t1);
 
 struct CloudTile { uint count; uint pad0, pad1, pad2; uint macroIdx[CLOUD_MAX_TILE_MACROS]; };
 StructuredBuffer<CloudTile> g_tiles : register(t2);
@@ -27,7 +28,9 @@ COMPUTE_MAIN
     if (px.x >= (uint)g_traceSize.x || px.y >= (uint)g_traceSize.y) return;
 
     float2 uv = (px + 0.5) * g_traceSize.zw;
-    float3 o = g_camPosWS.xyz;
+    // Whole-field advection: +windOffset here == -windOffset on macro centres in
+    // CloudTileBin, so binning and trace see the same drifted cloudscape.
+    float3 o = g_camPosWS.xyz + g_windOffset.xyz;
     float3 dir = CloudRayDir(float2(px), g_traceSize.zw);
     float t1 = CloudGeomT(uv, g_sceneDepth[px], dir);
 
@@ -37,17 +40,29 @@ COMPUTE_MAIN
     CloudTile tile = g_tiles[tileIndex];
     uint n = min(tile.count, (uint)CLOUD_MAX_TILE_MACROS);
 
-    float tau = 0.0;
+    float tau = 0.0;          // signed accumulation; clamped once at the end
     float bestTau = 0.0;
     float bestT = 0.0;
     for (uint i = 0; i < n; ++i)
     {
         CloudMacro m = g_macros[tile.macroIdx[i]];
-        CloudKernel k = KernelFromMacro(m);
-        KernelRayTerms t = KernelRaySetup(k, o, dir);
-        float tk = TauKernelClamped(k.amplitude, t, 0.0, 0.0, t1);
-        tau += max(tk, 0.0);
-        if (tk > bestTau) { bestTau = tk; bestT = t.tbar; }
+
+        // Macro envelope (the base cloud mass), pure Gaussian.
+        CloudKernel mk = KernelFromMacro(m);
+        KernelRayTerms mt = KernelRaySetup(mk, o, dir);
+        float envTau = TauKernelClamped(mk.amplitude, mt, 0.0, 0.0, t1);
+        tau += max(envTau, 0.0);
+        if (envTau > bestTau) { bestTau = envTau; bestT = mt.tbar; }
+
+        // Gabor detail kernels erode/build on top (signed).
+        uint kbegin = m.detailBegin;
+        uint kend = kbegin + m.detailCount;
+        for (uint j = kbegin; j < kend; ++j)
+        {
+            CloudKernel dk = UnpackKernel(g_kernels[j], m);
+            KernelRayTerms dt = KernelRaySetup(dk, o, dir);
+            tau += TauKernelClamped(dk.amplitude, dt, 0.0, 0.0, t1);
+        }
     }
 
     float T = exp(-max(tau, 0.0));
