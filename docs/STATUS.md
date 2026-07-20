@@ -9,7 +9,8 @@ machine — do not block on them unless a later step depends on the result.
 - [x] P0.0 Seed repo from toy-renderer @ c15a3425 (commit `32d538e`; HTTPS .gitmodules, gitlinks)
 - [x] P0.1 Spec (docs/PLAN.md), this file, tools/validate_math.py (MATH-CHECK green in container),
       tools/check_shaders.sh, README build notes
-- [ ] P0.2 Aftermath opt-in premake option + DXC DLL postbuild copy
+- [x] P0.2 Aftermath opt-in premake option + DXC DLL postbuild copy (USER: verify fresh-clone
+      build without thirdparty/aftermath)
 - [ ] P0.3 Device5/CommandList4 QI + CheckFeatureSupport (RT tier, SM, typed UAV loads) + caps readout
 - [ ] P0.4 CloudShaderCompiler (DXC hot reload, Debug-only) + ImGui reload button
 
@@ -54,4 +55,5 @@ machine — do not block on them unless a later step depends on the result.
 ## User-verification queue
 (steps finished in-code, awaiting a Windows build/run report)
 
-- none yet
+- P0.2: fresh clone + `premake5 vs2022` + build x64 Debug WITHOUT thirdparty/aftermath present;
+  expect link success; after a NuGet restore + rebuild, dxcompiler.dll/dxil.dll appear in bin/Debug

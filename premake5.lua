@@ -1,3 +1,8 @@
+newoption {
+   trigger = "aftermath",
+   description = "Enable NVIDIA Nsight Aftermath (requires the SDK in thirdparty/aftermath/)"
+}
+
 workspace "Awesome-Thing"
    configurations { "Debug", "Release" }
    platforms { "x64" }

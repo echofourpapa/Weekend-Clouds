@@ -39,9 +39,12 @@ project "Awesome"
         "../../thirdparty/imgui",
         "../../thirdparty/stb",
         "../../thirdparty/assimp/include",
-        "../../thirdparty/MikkTSpace",
-        "../../thirdparty/aftermath/include"
+        "../../thirdparty/MikkTSpace"
     }
+    if _OPTIONS["aftermath"] then
+        externalincludedirs { "../../thirdparty/aftermath/include" }
+        defines { "USE_NSIGHT_AFTERMATH" }
+    end
     
     --libdirs { "../../thirdparty/aftermath/bin/x64"} 
 
