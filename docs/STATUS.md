@@ -66,10 +66,16 @@ machine — do not block on them unless a later step depends on the result.
 - [ ] P4.4 Sky→cubemap→IBL refresh + exposure clamp
 
 ## Phase 5 — LOD/temporal/perf
-- [ ] P5.1 LOD + bounded masking + debug views
-- [ ] P5.2 Half-res trace + denoise + reproject + upsampling composite
-- [ ] P5.3 TAA sky fix
-- [ ] P5.4 Perf tuning + acceptance-ladder verdict (record here + README)
+- [x] P5.1 Continuous LOD (per-kernel freq×footprint attenuation folded into the single exp) + bounded
+      stochastic masking (reweighted 1/p) + ImGui mask controls.
+- [x] P5.2a Half-res trace (m_traceScale=2) + bilinear upsampling composite.
+- [x] P5.2b Temporal reprojection (CloudReproject-c): cloud-owned RGBA16F ping-pong history,
+      camera-motion reprojection via prevViewProj, 3x3 neighbourhood clamp, transmittance-delta
+      disocclusion. Composite reads the reprojected result (t13). t9=prev / u10=cur / t13=cur-for-
+      composite written per-frame into the [f][0] block (safe: block fenced 3 frames back).
+- [ ] P5.2c Spatial denoise (a-trous bilateral) before temporal — only if masking noise needs it.
+- [ ] P5.3 TAA sky fix (camera-only reprojection for depth==0 pixels)
+- [ ] P5.4 Perf tuning + acceptance-ladder verdict at 2560x1440 (record here + README)
 
 ## Phase 6 — stretch (optional)
 - [ ] P6.1 In-register kernel synthesis A/B

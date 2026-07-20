@@ -8,7 +8,7 @@
 
 Texture2D<float4>   g_skyViewLUT   : register(t5);
 Texture2D<float>    g_sceneDepth   : register(t6);
-Texture2D<float4>   g_cloudScatter : register(t11);   // rgb inscatter, a transmittance
+Texture2D<float4>   g_cloudScatter : register(t13);   // reprojected result (rgb inscatter, a T)
 RWTexture2D<float4> g_hdrOutput    : register(u12);    // deferred HDR, in-place
 
 COMPUTE_MAIN

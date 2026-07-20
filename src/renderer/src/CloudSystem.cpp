@@ -193,7 +193,9 @@ bool CloudSystem::StartUp()
     m_tileCountY = (m_traceH + c_cloudTilePx - 1) / c_cloudTilePx;
     m_scatterTex = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud Scatter");
     m_cloudDepthTex = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16_FLOAT, L"Cloud Depth");
-    if (!m_scatterTex || !m_cloudDepthTex) return false;
+    m_history[0] = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud History 0");
+    m_history[1] = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud History 1");
+    if (!m_scatterTex || !m_cloudDepthTex || !m_history[0] || !m_history[1]) return false;
 
     // Tile buffer: one CloudTile per 16x16 tile (macro lists), rebuilt each frame.
     {
@@ -250,12 +252,14 @@ bool CloudSystem::StartUp()
         uint32 brute = m_Awesome->GetComputeSystem()->CompileShader(L"CloudTraceBrute-c", perms);
         uint32 bin = m_Awesome->GetComputeSystem()->CompileShader(L"CloudTileBin-c", perms);
         uint32 trace = m_Awesome->GetComputeSystem()->CompileShader(L"CloudTrace-c", perms);
-        if (comp == invalidIndex32 || brute == invalidIndex32 || bin == invalidIndex32 || trace == invalidIndex32) return false;
+        uint32 reproj = m_Awesome->GetComputeSystem()->CompileShader(L"CloudReproject-c", perms);
+        if (comp == invalidIndex32 || brute == invalidIndex32 || bin == invalidIndex32 || trace == invalidIndex32 || reproj == invalidIndex32) return false;
         m_compositePSO = m_Awesome->GetComputeSystem()->CreatePipeline(comp, m_rootSignature);
         m_brutePSO = m_Awesome->GetComputeSystem()->CreatePipeline(brute, m_rootSignature);
         m_binPSO = m_Awesome->GetComputeSystem()->CreatePipeline(bin, m_rootSignature);
         m_tracePSO = m_Awesome->GetComputeSystem()->CreatePipeline(trace, m_rootSignature);
-        if (m_compositePSO == (uint32)-1 || m_brutePSO == (uint32)-1 || m_binPSO == (uint32)-1 || m_tracePSO == (uint32)-1) return false;
+        m_reprojPSO = m_Awesome->GetComputeSystem()->CreatePipeline(reproj, m_rootSignature);
+        if (m_compositePSO == (uint32)-1 || m_brutePSO == (uint32)-1 || m_binPSO == (uint32)-1 || m_tracePSO == (uint32)-1 || m_reprojPSO == (uint32)-1) return false;
     }
 
     return true;
@@ -269,6 +273,8 @@ bool CloudSystem::TearDown()
     SafeRelease(m_scatterTex);
     SafeRelease(m_cloudDepthTex);
     SafeRelease(m_tileBuf);
+    SafeRelease(m_history[0]);
+    SafeRelease(m_history[1]);
     for (uint32 i = 0; i < c_frameBufferCount; ++i)
     {
         if (m_constantBuffer[i])
@@ -347,6 +353,8 @@ void CloudSystem::UpdateConstants(float delta)
     // lodParams: footprintScale (per trace pixel), lodSkipThreshold, maskAggressiveness, survivalFloor
     m_constants.lodParams = { 2.0f * tanf(cam->verticalFOV * 0.5f) / th, 0.02f, m_maskAggressiveness, m_survivalFloor };
     m_constants.erosionParams = { 0.7f, 4.0f, 20.0f, 2000.0f };
+    // temporal: alphaBase, disocclusionTauDelta, accumCount(unused), histBlendMax
+    m_constants.temporal = { 0.1f, 0.15f, 0.0f, 1.0f };
     uint32 macroCount = m_generator->GetMacroCount();
     m_constants.counts[0] = macroCount;
     m_constants.counts[1] = m_generator->GetKernelCount();
@@ -414,6 +422,22 @@ void CloudSystem::Render(float delta)
         ouav.Format = DXGI_FORMAT_R11G11B10_FLOAT;
         ouav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         m_Awesome->Device()->CreateUnorderedAccessView(m_Awesome->GetDeferredRenderer()->GetOutputBuffer(), nullptr, &ouav, m_uavBlocks[f][0][UAV_HdrOut].cpuHandle);
+
+        // Temporal ping-pong: t9 = prev history (reproject reads), u10 = cur
+        // history (reproject writes), t13 = cur history (composite reads). Safe
+        // to (re)write here — this block was last used 3 frames ago (fenced).
+        uint32 cur = m_historyIdx, prev = m_historyIdx ^ 1;
+        D3D12_SHADER_RESOURCE_VIEW_DESC hsrv = {};
+        hsrv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        hsrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        hsrv.Texture2D.MipLevels = 1;
+        hsrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        m_Awesome->Device()->CreateShaderResourceView(m_history[prev], &hsrv, m_srvBlocks[f][0][SRV_HistColor].cpuHandle);
+        m_Awesome->Device()->CreateShaderResourceView(m_history[cur], &hsrv, m_srvBlocks[f][0][SRV_DenoiseTmp].cpuHandle);
+        D3D12_UNORDERED_ACCESS_VIEW_DESC huav = {};
+        huav.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        huav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        m_Awesome->Device()->CreateUnorderedAccessView(m_history[cur], nullptr, &huav, m_uavBlocks[f][0][UAV_HistColor].cpuHandle);
     }
 
     BindCommon();
@@ -459,6 +483,13 @@ void CloudSystem::Render(float delta)
         cl->Dispatch((m_traceW + 7) / 8, (m_traceH + 7) / 8, 1);
         m_Awesome->TransitionResource(m_scatterTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         m_Awesome->TransitionResource(m_cloudDepthTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+        // Temporal reprojection: current scatter + prev history -> cur history.
+        PIXScopedEvent(cl, 0, "Cloud Reproject");
+        m_Awesome->TransitionResource(m_history[m_historyIdx], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        m_Awesome->GetComputeSystem()->SetPSO(m_reprojPSO);
+        cl->Dispatch((m_traceW + 7) / 8, (m_traceH + 7) / 8, 1);
+        m_Awesome->TransitionResource(m_history[m_historyIdx], D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     }
 
     // Composite: sky behind geometry + cloud blend, in-place on the deferred
@@ -472,4 +503,6 @@ void CloudSystem::Render(float delta)
     }
 
     m_Awesome->TransitionResource(m_Awesome->GetDepthStencilBuffer(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+    m_historyIdx ^= 1;   // swap temporal ping-pong for next frame
 }
