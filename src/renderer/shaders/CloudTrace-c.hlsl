@@ -43,6 +43,7 @@ COMPUTE_MAIN
     float tau = 0.0;          // signed accumulation; clamped once at the end
     float bestTau = 0.0;
     float bestT = 0.0;
+    float bestHeight = 0.5;   // heightFrac01 of the dominant contributor (for the light gradient)
     for (uint i = 0; i < n; ++i)
     {
         CloudMacro m = g_macros[tile.macroIdx[i]];
@@ -52,7 +53,7 @@ COMPUTE_MAIN
         KernelRayTerms mt = KernelRaySetup(mk, o, dir);
         float envTau = TauKernelClamped(mk.amplitude, mt, 0.0, 0.0, t1);
         tau += max(envTau, 0.0);
-        if (envTau > bestTau) { bestTau = envTau; bestT = mt.tbar; }
+        if (envTau > bestTau) { bestTau = envTau; bestT = mt.tbar; bestHeight = m.heightFrac01; }
 
         // Gabor detail kernels erode/build on top (signed).
         uint kbegin = m.detailBegin;
@@ -65,11 +66,20 @@ COMPUTE_MAIN
         }
     }
 
-    float T = exp(-max(tau, 0.0));
+    float tauC = max(tau, 0.0);
+    float T = exp(-tauC);
+
+    // Approximate lighting (P4.0, no shadow cache yet): Beer-powder edge
+    // darkening + a vertical gradient (bright tops / dark bases) + sky ambient.
+    // Physically-correct self-shadowing (analytic sun transmittance from a field
+    // cache) is P4.2.
     float cosVS = dot(dir, normalize(g_sunDirWS.xyz));
     float phase = PhaseDualHG(cosVS);
-    float3 ambient = float3(0.30, 0.45, 0.65) * g_ambientParams.x;
-    float3 inscatter = (1.0 - T) * (g_sunRadiance.rgb * phase * 0.20 + ambient);
+    float powder = 1.0 - exp(-2.0 * tauC);                 // dark cores/edges
+    float lightGrad = lerp(0.25, 1.0, saturate(bestHeight));
+    float3 sunLit = g_sunRadiance.rgb * phase * powder * lightGrad;
+    float3 skyAmb = float3(0.30, 0.45, 0.65) * g_ambientParams.x * (0.4 + 0.6 * saturate(bestHeight));
+    float3 inscatter = (1.0 - T) * (sunLit + skyAmb);
 
     uint dbg = g_mode.x;
     if (dbg == CLOUD_DBG_TRANSMIT)      inscatter = T.xxx;
