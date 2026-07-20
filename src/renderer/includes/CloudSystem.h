@@ -124,6 +124,7 @@ namespace Awesome
         uint32 m_tracePSO = (uint32)-1;
         uint32 m_traceW = 0, m_traceH = 0;
         uint32 m_tileCountX = 0, m_tileCountY = 0;
+        uint32 m_traceScale = 2;   // 2 = half-res trace, 4 = quarter
 
         ID3D12Resource* m_constantBuffer[c_frameBufferCount] = {};
         uint8* m_constantMapped[c_frameBufferCount] = {};

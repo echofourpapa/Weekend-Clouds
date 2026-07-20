@@ -185,8 +185,10 @@ bool CloudSystem::StartUp()
 
     // Trace targets (P1.4 is full-res; P5 moves the trace to 1280x720). Sized to
     // the current window; a window resize is not yet handled for cloud targets.
-    m_traceW = m_Awesome->GetWidth();
-    m_traceH = m_Awesome->GetHeight();
+    // Half-resolution trace (docs/PLAN.md 4.8); composite upsamples. P5.4 can
+    // drop to quarter-res via m_traceScale.
+    m_traceW = (m_Awesome->GetWidth() + m_traceScale - 1) / m_traceScale;
+    m_traceH = (m_Awesome->GetHeight() + m_traceScale - 1) / m_traceScale;
     m_tileCountX = (m_traceW + c_cloudTilePx - 1) / c_cloudTilePx;
     m_tileCountY = (m_traceH + c_cloudTilePx - 1) / c_cloudTilePx;
     m_scatterTex = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud Scatter");
