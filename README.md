@@ -11,6 +11,25 @@ Target: **≤1 ms GPU at 2560×1440 on an RTX 4070-class card.**
 - **Spec / design doc:** [`docs/PLAN.md`](docs/PLAN.md) (canonical — read §0 before contributing)
 - **Progress:** [`docs/STATUS.md`](docs/STATUS.md)
 
+## Features
+
+Procedural, animated, self-shadowed volumetric clouds as analytic Gaussian/Gabor
+primitives — no voxel raymarching:
+
+- **Tiled compute traversal** (primary) with a DXR 1.1 inline-**RayQuery** A/B path.
+- **Procedural generation**: weather-FBM macro Gaussians + Gabor detail octaves (signed erosion),
+  wind (advection + per-octave phase drift), or **load a `.cloud` fit** from `tools/vdb_fit/`.
+- **Analytic closed-form** ray integration (erf), validated against quadrature in `tools/validate_math.py`.
+- **Continuous LOD + stochastic masking**, **half-res** trace, **à-trous denoise**, **temporal
+  reprojection** (cloud-owned history), TAA sky-pixel fix.
+- **Lighting**: sun-transmittance **field cache** (analytic self-shadowing) + Wrenninge multi-octave
+  scatter; ray-traced reference + baked-vs-reference diff; height/powder fallback; Hillaire sky LUTs.
+- Rich ImGui panel (time-of-day, coverage, wind, quality knobs, traversal/lighting modes) + 12 debug views.
+
+Two things remain, both hardware-in-the-loop: a first **Windows build** to shake out first-compile
+issues, and **profiler-driven tuning** to the 1 ms target (all knobs are exposed). A handful of
+comparison/stretch items are documented deferrals in `docs/STATUS.md`.
+
 ## Building (Windows)
 
 ```bat
