@@ -90,6 +90,25 @@ COMPUTE_MAIN
 
     float tauC = max(tau, 0.0);
     float T = exp(-tauC);
+
+    // Shader Execution Reordering hook (docs/PLAN.md P6.4). The lighting tail
+    // below is highly divergent -- the REFERENCE path fires a second RayQuery,
+    // the diff path fires two, and empty (T~=1) rays do neither. SER lets the
+    // hardware regroup lanes by that outcome before the expensive tail so the
+    // secondary traversals stay coherent. MaybeReorderThread is an SM 6.9
+    // intrinsic; this block is compiled only when the shader is built as a
+    // raygeneration variant under a 6.9-capable Agility runtime (see the
+    // --agility-* premake options and D3D12SDK_VERSION_OVERRIDE). It is
+    // #ifdef'd out of the shipping SM 6.8 compute build, so it can never break
+    // the current pipeline.
+#ifdef CLOUD_SER
+    // Coherence class: bit0 = ray touched clouds, bit1 = will fire a sun ray.
+    uint coh = (T < 0.995 ? 1u : 0u);
+    coh |= ((g_mode.x == CLOUD_DBG_LIGHT_DIFF ||
+             g_mode.y == CLOUD_LIGHT_REFERENCE) && T < 0.995) ? 2u : 0u;
+    MaybeReorderThread(coh, 2u);
+#endif
+
     float cosVS = dot(dir, normalize(g_sunDirWS.xyz));
     float powder = 1.0 - exp(-2.0 * tauC);
     float3 scatterWS = o + dir * bestT;

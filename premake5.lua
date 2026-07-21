@@ -3,6 +3,28 @@ newoption {
    description = "Enable NVIDIA Nsight Aftermath (requires the SDK in thirdparty/aftermath/)"
 }
 
+-- Agility SDK selection (docs/PLAN.md P6.4). Lets the runtime be bumped to a
+-- newer redistributable -- e.g. an SM 6.9 / SER-capable D3D12 -- without editing
+-- source. Defaults track the pinned NuGet payload (version 615).
+newoption {
+   trigger = "agility-nuget",
+   value = "VER",
+   description = "Agility SDK NuGet package version (default 1.615.1)"
+}
+newoption {
+   trigger = "agility-sdk",
+   value = "NUM",
+   description = "D3D12SDKVersion export number matching the NuGet payload (default 615)"
+}
+
+-- Shared accessors used by both the app and renderer projects.
+function AgilityNuget()
+   return "Microsoft.Direct3D.D3D12:" .. (_OPTIONS["agility-nuget"] or "1.615.1")
+end
+function AgilitySdkVersion()
+   return _OPTIONS["agility-sdk"] or "615"
+end
+
 workspace "Awesome-Thing"
    configurations { "Debug", "Release" }
    platforms { "x64" }

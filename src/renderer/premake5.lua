@@ -8,7 +8,7 @@ project "Awesome"
 
     nuget {
         "WinPixEventRuntime:1.0.240308001",
-        "Microsoft.Direct3D.D3D12:1.615.1",
+        AgilityNuget(),
         "Microsoft.Direct3D.DXC:1.8.2502.8"
      }
 

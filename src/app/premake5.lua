@@ -9,9 +9,12 @@ project "Awesome-Client"
    targetname "Awesome-Thing"
    nuget {
       "WinPixEventRuntime:1.0.240308001",
-      "Microsoft.Direct3D.D3D12:1.615.1",
+      AgilityNuget(),
       "Microsoft.Direct3D.DXC:1.8.2502.8"
    }
+
+   -- Match the D3D12SDKVersion export in Client.cpp to the restored NuGet payload.
+   defines { "D3D12SDK_VERSION_OVERRIDE=" .. AgilitySdkVersion() }
 
    files { "**.h", "**.cpp", "**.rc", "**.png"}
 

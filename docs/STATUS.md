@@ -111,10 +111,15 @@ machine — do not block on them unless a later step depends on the result.
       table, fetched once per reservoir winner. Deferred: the adversarial review established intra-kernel
       MS is a percent-level effect for optically-thin detail kernels, and the field cache + Wrenninge
       octaves already deliver the dominant inter-kernel MS. Large bake subsystem, low incremental value.
-- [~] P6.4 Agility preview / DXR 1.2 / work graphs — EVALUATED, NOT NEEDED. Agility 1.615 (current)
-      already covers DXR 1.1 inline RayQuery + SM 6.8, which the whole renderer uses. SM 6.9 / DXR 1.2
-      (SER, OMM) / work-graph generation would need a preview Agility SDK + a DXC bump and only benefit
-      stretch experiments (e.g. SER to reorder the RQ candidate loop). Documented as future work.
+- [x] P6.4 Agility version parameterization + SER-ready RQ path — DONE. Agility 1.615 (current) already
+      covers DXR 1.1 inline RayQuery + SM 6.8, which the whole renderer uses, so the shipping build is
+      unchanged. Added two non-breaking hooks so a 6.9/SER runtime can be dropped in without editing
+      source: (1) premake options --agility-nuget / --agility-sdk (default 1.615.1 / 615) drive the
+      NuGet restore in both src/app + src/renderer premake and a D3D12SDK_VERSION_OVERRIDE define; the
+      D3D12SDKVersion/Path exports in Client.cpp now read those overrides with a 615 fallback. (2) A
+      #ifdef CLOUD_SER MaybeReorderThread() block in CloudTraceRQ-c.hlsl regroups lanes by
+      hit/sun-ray coherence before the divergent lighting tail — an SM 6.9 intrinsic, compiled only in
+      a 6.9 raygen build, #ifdef'd out of the SM 6.8 compute build so it can never break the pipeline.
 
 ## Review notes (Phase 2-3)
 - Full Phase 2-3 audit complete. Found ONE crash-class bug (now fixed): EnsureUploaded reused the

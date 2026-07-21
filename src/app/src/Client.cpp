@@ -25,9 +25,21 @@
 
 #include <future>
 
-extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 615; }
+// Agility SDK version exports. Override at build time with
+//   -DD3D12SDK_VERSION_OVERRIDE=<n> -DD3D12SDK_PATH_OVERRIDE=L"..."
+// to move to a newer redistributable (e.g. an SM 6.9 / SER-capable runtime)
+// without touching source. Defaults track the NuGet package pinned in premake
+// (Microsoft.Direct3D.D3D12 1.615.1 -> version 615, payload under .\D3D12\).
+#ifndef D3D12SDK_VERSION_OVERRIDE
+#define D3D12SDK_VERSION_OVERRIDE 615
+#endif
+#ifndef D3D12SDK_PATH_OVERRIDE
+#define D3D12SDK_PATH_OVERRIDE u8".\\D3D12\\"
+#endif
 
-extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = u8".\\D3D12\\"; }
+extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = D3D12SDK_VERSION_OVERRIDE; }
+
+extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = D3D12SDK_PATH_OVERRIDE; }
 
 #define W_UP 0x57
 #define S_DOWN 0x53
