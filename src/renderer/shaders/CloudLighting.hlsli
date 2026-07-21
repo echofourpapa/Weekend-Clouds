@@ -16,6 +16,7 @@
 
 Texture3D<float4> g_lightCache  : register(t8);   // sun: .r=tau; six-way: +X,-X,+Y,-Y
 Texture3D<float4> g_lightCache1 : register(t3);   // six-way: +Z,-Z (,_,_)
+Texture2D<float4> g_scatterLUT  : register(t7);   // canonical scattering transfer table (P6.2)
 
 #define CLOUD_CACHE_X 128
 #define CLOUD_CACHE_Y 32
@@ -51,9 +52,16 @@ float SampleSunTau(float3 worldPos)
     return g_lightCache.SampleLevel(linearClampSampler, uvw, 0).r;
 }
 
-// Wrenninge multi-octave multiple-scattering approximation of the sun term.
+// Multi-octave multiple-scattering sun term. genParams.x selects the baked
+// canonical transfer table (P6.2, richer/smoother, one fetch) over the inline
+// 3-tap Wrenninge approximation.
 float3 CloudSunScatter(float tauSun, float cosVS)
 {
+    if (g_genParams.x != 0)
+    {
+        float2 uv = float2(saturate(tauSun / 8.0), cosVS * 0.5 + 0.5);
+        return g_sunRadiance.rgb * g_scatterLUT.SampleLevel(linearClampSampler, uv, 0).rgb;
+    }
     int taps = (int)g_scatterParams.w;      // msOctaves (e.g. 3)
     float a = 1.0, b = 1.0, c = 1.0;
     float3 sum = 0.0;

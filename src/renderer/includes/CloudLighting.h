@@ -33,6 +33,9 @@ namespace Awesome
         CloudSystem* m_clouds;
         ID3D12Resource* m_cache = nullptr;    // sun: .r=tau; six-way: +X,-X,+Y,-Y
         ID3D12Resource* m_cache1 = nullptr;   // six-way: +Z,-Z
+        ID3D12Resource* m_scatterLUT = nullptr;   // canonical scattering table (P6.2)
         uint32 m_buildPSO = (uint32)-1;
+        uint32 m_scatterBakePSO = (uint32)-1;
+        bool m_scatterBaked = false;
     };
 }

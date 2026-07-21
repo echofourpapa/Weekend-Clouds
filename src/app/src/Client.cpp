@@ -810,6 +810,7 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                     ImGui::SliderFloat("Temporal Blend", &Awesome.GetClouds()->m_temporalAlpha, 0.02f, 1.0f);
                     ImGui::Checkbox("Accumulate (static cam)", &Awesome.GetClouds()->m_accumulate);
                     ImGui::Checkbox("In-register kernel synth", &Awesome.GetClouds()->m_inRegisterSynth);
+                    ImGui::Checkbox("Baked scatter LUT", &Awesome.GetClouds()->m_bakedScatter);
 
                     {
                         Awesome::CloudGenerator* gen = Awesome.GetClouds()->GetGenerator();

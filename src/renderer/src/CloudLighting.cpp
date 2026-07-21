@@ -43,24 +43,54 @@ bool CloudLighting::StartUp()
         m_clouds->WriteUAV(UAV_Weather, m_cache1, &uav);     // u3
     }
 
+    // Canonical scattering transfer table (2D LUT, baked once on the first frame).
+    m_scatterLUT = m_clouds->CreateTex2D(64, 64, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud Scatter LUT");
+    if (!m_scatterLUT) return false;
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
+        srv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srv.Texture2D.MipLevels = 1;
+        srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        m_clouds->WriteSRV(SRV_BlueNoise, m_scatterLUT, &srv);   // t7
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uav = {};
+        uav.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+        uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        m_clouds->WriteUAV(UAV_Kernel, m_scatterLUT, &uav);      // u0
+    }
+
     std::vector<D3D_SHADER_MACRO*> perms;
     perms.push_back(new D3D_SHADER_MACRO[1]{ { NULL, NULL } });
     uint32 shader = m_Awesome->GetComputeSystem()->CompileShader(L"CloudLightCache-c", perms);
-    if (shader == invalidIndex32) return false;
+    uint32 bake = m_Awesome->GetComputeSystem()->CompileShader(L"CloudScatterBake-c", perms);
+    if (shader == invalidIndex32 || bake == invalidIndex32) return false;
     m_buildPSO = m_Awesome->GetComputeSystem()->CreatePipeline(shader, m_clouds->GetRootSignature());
-    return m_buildPSO != (uint32)-1;
+    m_scatterBakePSO = m_Awesome->GetComputeSystem()->CreatePipeline(bake, m_clouds->GetRootSignature());
+    return m_buildPSO != (uint32)-1 && m_scatterBakePSO != (uint32)-1;
 }
 
 bool CloudLighting::TearDown()
 {
     SafeRelease(m_cache);
     SafeRelease(m_cache1);
+    SafeRelease(m_scatterLUT);
     return true;
 }
 
 void CloudLighting::Build()
 {
     ID3D12GraphicsCommandList* cl = m_Awesome->GetCommandList();
+
+    // One-time canonical scattering LUT bake (needs an open command list + bound tables).
+    if (!m_scatterBaked)
+    {
+        m_Awesome->TransitionResource(m_scatterLUT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        m_Awesome->GetComputeSystem()->SetPSO(m_scatterBakePSO);
+        cl->Dispatch(8, 8, 1);   // 64x64 / 8
+        m_Awesome->TransitionResource(m_scatterLUT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        m_scatterBaked = true;
+    }
+
     m_Awesome->TransitionResource(m_cache, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     m_Awesome->TransitionResource(m_cache1, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     m_Awesome->GetComputeSystem()->SetPSO(m_buildPSO);

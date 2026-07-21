@@ -103,6 +103,7 @@ namespace Awesome
         float m_temporalAlpha = 0.1f;         // temporal blend (lower = steadier, slower)
         bool  m_accumulate = false;           // static-camera progressive accumulation (validation)
         bool  m_inRegisterSynth = false;      // regenerate detail kernels in the trace (P6.1)
+        bool  m_bakedScatter = false;         // use the canonical scattering LUT (P6.2)
         uint32 m_debugView = 0;
         uint32 m_lightMode = 0;
         uint32 m_traversalMode = 0;   // 0 tiled (primary), 3 brute (A/B)
