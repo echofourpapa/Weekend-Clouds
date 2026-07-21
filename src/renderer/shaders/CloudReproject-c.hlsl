@@ -17,6 +17,7 @@ COMPUTE_MAIN
     if (px.x >= (uint)g_traceSize.x || px.y >= (uint)g_traceSize.y) return;
 
     float4 cur = g_scatter[px];
+    float4 rawScatter = cur;      // pre-blend (for debug passthrough)
     float curDepth = g_cloudDepth[px];
 
     // No cloud here: pass the current value straight through (no history smear).
@@ -43,18 +44,25 @@ COMPUTE_MAIN
     }
 
     float alpha = g_temporal.x;   // alphaBase
+    bool disocc = false;
     if (any(prevUV < 0.0) || any(prevUV > 1.0))
     {
         alpha = 1.0;              // disoccluded (off-screen last frame)
+        disocc = true;
     }
     else
     {
         float4 hist = g_histPrev.SampleLevel(linearClampSampler, prevUV, 0);
-        if (abs(hist.a - cur.a) > g_temporal.y)
-            alpha = 1.0;          // transmittance-delta disocclusion
+        if (abs(hist.a - cur.a) > g_temporal.y) { alpha = 1.0; disocc = true; }
         hist = clamp(hist, nmin, nmax);
         cur = lerp(hist, cur, alpha);
     }
+
+    // Debug views bypass temporal blending so the visualization isn't smeared.
+    if (g_mode.x == CLOUD_DBG_HISTORY_REJ)
+        cur = float4(disocc ? 1.0 : 0.0, disocc ? 0.0 : 1.0, 0.0, cur.a);   // red=rejected, green=kept
+    else if (g_mode.x != 0)
+        cur = rawScatter;                                                    // show the trace's raw debug output
 
     g_histCur[px] = cur;
 }

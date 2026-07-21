@@ -45,6 +45,9 @@ COMPUTE_MAIN
     float bestTau = 0.0;
     float bestT = 0.0;
     float bestHeight = 0.5;   // heightFrac01 of the dominant contributor (for the light gradient)
+    float3 bands = 0.0;       // debug: per-octave contribution (r=o0, g=o1, b=o2, +o3)
+    float minTau = 0.0;       // debug: most negative single-kernel contribution (erosion overshoot)
+    uint visited = 0, survived = 0;   // debug: masking survival
     for (uint i = 0; i < n; ++i)
     {
         CloudMacro m = g_macros[tile.macroIdx[i]];
@@ -73,6 +76,7 @@ COMPUTE_MAIN
 
             float lodExp = LodExponent(dk.freqWS, dt.tbar);
             if (lodExp < -3.912) continue;                    // LOD cull: contribution < 2%
+            visited++;
 
             float w = 1.0;
             if (maskAggr > 1.0 && lodExp < -1.386)            // only mask already-small kernels
@@ -82,7 +86,15 @@ COMPUTE_MAIN
                 if (h > p) continue;
                 w = 1.0 / p;
             }
-            tau += w * TauKernelClamped(dk.amplitude, dt, lodExp, 0.0, t1);
+            survived++;
+            float contrib = w * TauKernelClamped(dk.amplitude, dt, lodExp, 0.0, t1);
+            tau += contrib;
+            minTau = min(minTau, contrib);
+            float ac = abs(contrib);
+            if (dk.octave == 0) bands.r += ac;
+            else if (dk.octave == 1) bands.g += ac;
+            else if (dk.octave == 2) bands.b += ac;
+            else bands += ac;
         }
     }
 
@@ -110,9 +122,19 @@ COMPUTE_MAIN
     float3 inscatter = (1.0 - T) * (sunLit + skyAmb);
 
     uint dbg = g_mode.x;
-    if (dbg == CLOUD_DBG_TRANSMIT)      inscatter = T.xxx;
-    else if (dbg == CLOUD_DBG_HEATMAP)  inscatter = Inferno(tile.count / 32.0);
-    else if (dbg == CLOUD_DBG_TILE_COUNT) inscatter = Inferno(tile.count / (float)CLOUD_MAX_TILE_MACROS);
+    if (dbg == CLOUD_DBG_TRANSMIT)          inscatter = T.xxx;
+    else if (dbg == CLOUD_DBG_HEATMAP)      inscatter = Inferno(visited / 64.0);
+    else if (dbg == CLOUD_DBG_TILE_COUNT)   inscatter = Inferno(tile.count / (float)CLOUD_MAX_TILE_MACROS);
+    else if (dbg == CLOUD_DBG_FREQBANDS)    inscatter = bands / max(max(bands.r, bands.g), max(bands.b, 0.02));
+    else if (dbg == CLOUD_DBG_DEPTH)        inscatter = frac(bestT / 1000.0).xxx;
+    else if (dbg == CLOUD_DBG_MASK_RATE)    inscatter = Inferno(survived / max((float)visited, 1.0));
+    else if (dbg == CLOUD_DBG_MIN_TAU)      inscatter = float3(max(tau, 0.0) * 0.2, 0.0, -minTau * 4.0);  // blue = erosion overshoot
+    else if (dbg == CLOUD_DBG_CACHE_SLICE)
+    {
+        // Visualise the light cache at this pixel's scatter altitude.
+        float tauSun = SampleSunTau(g_lightCache, o + dir * bestT);
+        inscatter = Inferno(1.0 - exp(-tauSun));
+    }
 
     g_scatter[px] = float4(inscatter, T);
     g_cloudDepth[px] = (T > 0.995) ? 0.0 : bestT;
