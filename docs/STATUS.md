@@ -63,7 +63,13 @@ machine — do not block on them unless a later step depends on the result.
       Cache box: cubic 256 m voxels centred on camera-in-macro-space, XZ snapped. lightMode!=0 keeps
       the P4.0 height heuristic as fallback.
 - [ ] P4.3 Six-way variant + RT-reference mode (needs RTScene from P2.3) + baked-vs-reference diff
-- [ ] P4.4 Sky→cubemap→IBL refresh + exposure clamp
+- [~] P4.4 Exposure clamp: the engine already exposes Min/Max Log Luminance (SetLogMin/SetLogMax +
+      ImGui), and the sun disc is bounded so auto-exposure isn't dominated. SCOPED DEFERRAL: full
+      sky-view-LUT -> cubemap -> IBL prefilter (so the scene's ambient/specular track time-of-day) is
+      NOT done - it needs a new prefilter subsystem hooking IBLProcessor internals (AddIBL only loads
+      HDRI files; no runtime "inject rendered cubemap + reprocess" path). The sun DIRECTION is already
+      unified (clouds drive GetSunLight), and the visible sky background is the composited sky, so the
+      only residual is HDRI-based ambient. Left as documented future work.
 
 ## Phase 5 — LOD/temporal/perf
 - [x] P5.1 Continuous LOD (per-kernel freq×footprint attenuation folded into the single exp) + bounded

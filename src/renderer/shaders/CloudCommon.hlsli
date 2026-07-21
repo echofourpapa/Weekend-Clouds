@@ -162,7 +162,9 @@ float3 SunDisc(float3 viewDir)
     if (c < cosR) return float3(0, 0, 0);
     float edge = saturate((c - cosR) / max(1.0 - cosR, 1e-6));
     float limb = pow(edge, 0.6);
-    return g_sunRadiance.rgb * limb * 40.0;
+    // Bounded so the histogram auto-exposure isn't dominated by the disc (the
+    // engine's Min/Max Log Luminance clamp is the further mitigation, P4.4).
+    return g_sunRadiance.rgb * limb * 6.0;
 }
 
 #endif
