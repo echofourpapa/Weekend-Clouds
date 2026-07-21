@@ -821,6 +821,9 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                         int seed = (int)gen->m_seed;
                         if (ImGui::InputInt("Seed", &seed)) { gen->m_seed = (uint32)seed; regen = true; }
                         if (ImGui::Button("Regenerate")) regen = true;
+                        ImGui::SameLine();
+                        if (ImGui::Button("Load fit.cloud"))
+                            gen->LoadFile("fit.cloud");   // from tools/vdb_fit/fit.py, placed in the working dir
                         if (regen) gen->RequestRegen();
 
                         float mb = gen->GetKernelCount() * 32.0f / (1024.0f * 1024.0f);

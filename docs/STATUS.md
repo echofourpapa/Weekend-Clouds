@@ -94,10 +94,26 @@ machine — do not block on them unless a later step depends on the result.
       Trace / Reproject / Composite (plus Sky, Bin via PIX). (record here + README)
 
 ## Phase 6 — stretch (optional)
-- [ ] P6.1 In-register kernel synthesis A/B
-- [ ] P6.2 Canonical 6D kernel transfer table
-- [ ] P6.3 VDB→Gabor fitting tool
-- [ ] P6.4 Agility preview / DXR 1.2 / work graphs
+- [x] P6.3 VDB->Gabor fitting tool (tools/vdb_fit/fit.py) + runtime loader. Fits a density volume
+      (synthetic in-container, or a real grid via --vdb with pyopenvdb) with a mass-weighted k-means +
+      per-cluster-covariance Gaussian mixture, writes a .cloud binary matching the CloudMacro (64 B) /
+      CloudKernelPacked (32 B) layouts. CloudGenerator::LoadFile reads it (magic-checked) and an ImGui
+      "Load fit.cloud" button swaps the procedural sky for the fitted mixture. Runs green in-container.
+- [~] P6.1 In-register kernel synthesis A/B — DOCUMENTED DEFERRAL. Design: a HLSL SynthKernel(macro, k)
+      mirroring CloudGenerator::Regenerate's per-kernel logic (PCG hash on (macro.seed,k), octave
+      lambda, local offset, signed erosion), called in the trace loop instead of loading g_kernels[j],
+      as a CloudTraceSynth-c variant. Deferred because the payoff (deleting the 15 MB kernel buffer) is
+      not needed - kernels already fit the 16 MB L2 budget - and a faithful port is ~100 lines of
+      untested shader duplicating generation logic. Low risk/value.
+- [~] P6.2 Canonical 6D kernel transfer table — DOCUMENTED DEFERRAL. Would bake single+multi scattering
+      for a canonical unit Gaussian (3D pos x 2D view x 1D optical-depth, sun-relative) into a ~16 MB
+      table, fetched once per reservoir winner. Deferred: the adversarial review established intra-kernel
+      MS is a percent-level effect for optically-thin detail kernels, and the field cache + Wrenninge
+      octaves already deliver the dominant inter-kernel MS. Large bake subsystem, low incremental value.
+- [~] P6.4 Agility preview / DXR 1.2 / work graphs — EVALUATED, NOT NEEDED. Agility 1.615 (current)
+      already covers DXR 1.1 inline RayQuery + SM 6.8, which the whole renderer uses. SM 6.9 / DXR 1.2
+      (SER, OMM) / work-graph generation would need a preview Agility SDK + a DXC bump and only benefit
+      stretch experiments (e.g. SER to reorder the RQ candidate loop). Documented as future work.
 
 ## Review notes (Phase 2-3)
 - Full Phase 2-3 audit complete. Found ONE crash-class bug (now fixed): EnsureUploaded reused the

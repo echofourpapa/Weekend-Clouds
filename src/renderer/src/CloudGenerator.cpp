@@ -4,6 +4,7 @@
 #include "Util.h"
 #include <DirectXMath.h>
 #include <cmath>
+#include <cstdio>
 
 using namespace Awesome;
 using namespace DirectX;
@@ -214,6 +215,38 @@ void CloudGenerator::Regenerate()
     m_uploaded = false;
     DebugPrint("CloudGenerator: %u macros, %u kernels (%.1f MB)\n",
         m_macroCount, m_kernelCount, m_kernelCount * 32.0f / (1024.0f * 1024.0f));
+}
+
+bool CloudGenerator::LoadFile(const char* path)
+{
+    FILE* f = fopen(path, "rb");
+    if (!f) { DebugPrint("CloudGenerator: could not open %s\n", path); return false; }
+    uint32 header[4] = {};
+    if (fread(header, sizeof(uint32), 4, f) != 4 || header[0] != 0x434C4431u) { fclose(f); return false; }
+    uint32 mc = header[1], kc = header[2];
+    if (mc > c_maxMacros || kc > c_maxKernels) { fclose(f); return false; }
+
+    m_cpuMacros.resize(mc);
+    m_cpuKernels.resize(kc);
+    m_cpuAABBs.clear();
+    if (mc && fread(m_cpuMacros.data(), sizeof(CloudMacro), mc, f) != mc) { fclose(f); return false; }
+    if (kc && fread(m_cpuKernels.data(), sizeof(CloudKernelPacked), kc, f) != kc) { fclose(f); return false; }
+    fclose(f);
+
+    for (const CloudMacro& m : m_cpuMacros)
+    {
+        D3D12_RAYTRACING_AABB ab;
+        ab.MinX = m.position[0] - m.boundRadius; ab.MinY = m.position[1] - m.boundRadius; ab.MinZ = m.position[2] - m.boundRadius;
+        ab.MaxX = m.position[0] + m.boundRadius; ab.MaxY = m.position[1] + m.boundRadius; ab.MaxZ = m.position[2] + m.boundRadius;
+        m_cpuAABBs.push_back(ab);
+    }
+
+    m_macroCount = mc;
+    m_kernelCount = kc;
+    m_dirty = false;      // don't let the procedural path overwrite the load
+    m_uploaded = false;   // trigger a GPU upload next frame
+    DebugPrint("CloudGenerator: loaded %u macros, %u kernels from %s\n", mc, kc, path);
+    return true;
 }
 
 void CloudGenerator::EnsureUploaded()

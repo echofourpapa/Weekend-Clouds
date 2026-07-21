@@ -52,6 +52,9 @@ namespace Awesome
         // Uploads freshly generated buffers on the first frame after a change.
         void EnsureUploaded();
         void RequestRegen() { m_dirty = true; }
+        // Load a .cloud file produced by tools/vdb_fit/fit.py (Phase 6). Replaces
+        // the procedural cloudscape with the fitted mixture until the next regen.
+        bool LoadFile(const char* path);
 
         uint32 GetMacroCount() const { return m_macroCount; }
         uint32 GetKernelCount() const { return m_kernelCount; }
