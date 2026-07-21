@@ -134,6 +134,66 @@ CloudKernel KernelFromMacro(CloudMacro m)
     return k;
 }
 
+// ---------------------------------------------------------------------------
+// In-register detail-kernel synthesis (docs/PLAN.md P6.1). Regenerates a detail
+// kernel directly from (macro.seed, k) instead of loading it from the kernel
+// buffer - deleting the buffer entirely, at the cost of ~ALU per kernel. This
+// mirrors CloudGenerator::Regenerate exactly (same hash) so it is a valid A/B.
+// ---------------------------------------------------------------------------
+
+uint GenHashU(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16; return x; }
+float GenHashF(uint x) { return (GenHashU(x) & 0xFFFFFFu) * (1.0 / 16777216.0); }
+
+CloudKernel SynthKernel(CloudMacro m, uint k, uint octaveCount)
+{
+    uint ks = GenHashU(m.seed ^ (k * 2654435761u));
+    const float lambda[4] = { 1600.0, 600.0, 250.0, 110.0 };
+    uint o = k % max(octaveCount, 1u);
+    float lam = lambda[o] * (0.75 + 0.5 * GenHashF(ks ^ 1u));
+
+    float gx = GenHashF(ks ^ 2u) - 0.5, gy = GenHashF(ks ^ 3u) - 0.5, gz = GenHashF(ks ^ 4u) - 0.5;
+    float spread = 0.55;
+    float lx = clamp(gx * spread, -1.0, 1.0), ly = clamp(gy * spread * 0.7, -1.0, 1.0), lz = clamp(gz * spread, -1.0, 1.0);
+
+    float ksig = lam * (0.5 + 0.15 * (GenHashF(ks ^ 5u) - 0.5));
+
+    float fdx = GenHashF(ks ^ 6u) - 0.5, fdy = GenHashF(ks ^ 7u) - 0.5, fdz = GenHashF(ks ^ 8u) - 0.5;
+    if (o == 0) fdy *= 0.3;
+    float fl = sqrt(fdx * fdx + fdy * fdy + fdz * fdz) + 1e-5;
+    float fmag = 1.0 / lam;
+    fdx = fdx / fl * fmag; fdy = fdy / fl * fmag; fdz = fdz / fl * fmag;
+
+    float sgn = (o >= 2 && GenHashF(ks ^ 9u) < 0.5) ? -1.0 : 1.0;
+    float amp = m.amplitude * pow(0.55, (float)o) * sgn;
+    float rr = (lx * 4) * (lx * 4) + (ly * 4) * (ly * 4) + (lz * 4) * (lz * 4);
+    float parentDens = m.amplitude * exp(-0.5 * rr);
+    if (sgn < 0.0 && abs(amp) > 0.7 * parentDens) amp = -0.7 * parentDens;
+
+    float phase = GenHashF(ks ^ 10u);
+    float q0 = GenHashF(ks ^ 11u) - 0.5, q1 = GenHashF(ks ^ 12u) - 0.5, q2 = GenHashF(ks ^ 13u) - 0.5, q3 = GenHashF(ks ^ 14u) - 0.5;
+    float ql = sqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3) + 1e-5;
+    q0 /= ql; q1 /= ql; q2 /= ql; q3 /= ql;
+    if (q3 < 0) { q0 = -q0; q1 = -q1; q2 = -q2; q3 = -q3; }
+
+    CloudKernel kk;
+    float3 pr0, pr1, pr2;
+    QuatToRows(float4(UnpackSnorm16x2(m.quatXY), UnpackSnorm16x2(m.quatZW)), pr0, pr1, pr2);
+    float3 local = float3(lx, ly, lz) * (4.0 * m.sigma);
+    kk.posWS = m.position
+             + float3(pr0.x, pr1.x, pr2.x) * local.x
+             + float3(pr0.y, pr1.y, pr2.y) * local.y
+             + float3(pr0.z, pr1.z, pr2.z) * local.z;
+    QuatToRows(float4(q0, q1, q2, q3), kk.row0, kk.row1, kk.row2);
+    kk.invSigma = 1.0 / max(float3(ksig, ksig, ksig), 1e-3);
+    kk.amplitude = amp;
+    kk.freqWS = float3(fdx, fdy, fdz);
+    kk.phaseTurns = phase;
+    kk.octave = o;
+    kk.shadowVisible = o <= 1;
+    kk.seed16 = ks & 0xFFFF;
+    return kk;
+}
+
 // Raw macro density at a world point (reference march / erosion bounds).
 float MacroDensity(CloudMacro m, float3 posWS)
 {

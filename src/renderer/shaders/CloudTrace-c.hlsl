@@ -67,10 +67,11 @@ COMPUTE_MAIN
         uint kend = kbegin + m.detailCount;
         float maskAggr = g_lodParams.z;
         float survFloor = g_lodParams.w;
+        bool synth = g_genParams.y != 0;                      // in-register synthesis (P6.1)
+        uint oct = max(g_genParams.z, 1u);
         for (uint j = kbegin; j < kend; ++j)
         {
-            CloudKernelPacked kp = g_kernels[j];
-            CloudKernel dk = UnpackKernel(kp, m);
+            CloudKernel dk = synth ? SynthKernel(m, j - kbegin, oct) : UnpackKernel(g_kernels[j], m);
             KernelRayTerms dt = KernelRaySetup(dk, o, dir);
 
             float lodExp = LodExponent(dk.freqWS, dt.tbar);
@@ -81,7 +82,7 @@ COMPUTE_MAIN
             if (maskAggr > 1.0 && lodExp < -1.386)            // only mask already-small kernels
             {
                 float p = clamp(exp(lodExp) / maskAggr, survFloor, 1.0);
-                float h = Hash01(uint3(px, (kp.b[3] & 0xFFFF) ^ (g_mode.w * 2654435761u)));
+                float h = Hash01(uint3(px, dk.seed16 ^ (g_mode.w * 2654435761u)));
                 if (h > p) continue;
                 w = 1.0 / p;
             }

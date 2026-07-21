@@ -406,6 +406,8 @@ void CloudSystem::UpdateConstants(float delta)
     float oz = floorf(mcz / voxel) * voxel - (CloudLighting::c_dimZ / 2) * voxel;
     m_constants.cacheOriginWS = { ox, 0.0f, oz, 1.0f / voxel };
     m_cacheSlice = (m_cacheSlice + 1) % (CloudLighting::c_dimZ / CloudLighting::c_slabZ);
+    m_constants.genParams[1] = m_inRegisterSynth ? 1u : 0u;   // P6.1: synth vs load
+    m_constants.genParams[2] = m_generator->m_octaves;        // octave count for synthesis
     m_constants.genParams[3] = m_cacheSlice;
 
     memcpy(m_constantMapped[m_Awesome->GetCurrentFrameIndex()], &m_constants, sizeof(CloudConstants));

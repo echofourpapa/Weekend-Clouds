@@ -809,6 +809,7 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                     ImGui::SliderFloat("Survival Floor", &Awesome.GetClouds()->m_survivalFloor, 0.01f, 0.5f);
                     ImGui::SliderFloat("Temporal Blend", &Awesome.GetClouds()->m_temporalAlpha, 0.02f, 1.0f);
                     ImGui::Checkbox("Accumulate (static cam)", &Awesome.GetClouds()->m_accumulate);
+                    ImGui::Checkbox("In-register kernel synth", &Awesome.GetClouds()->m_inRegisterSynth);
 
                     {
                         Awesome::CloudGenerator* gen = Awesome.GetClouds()->GetGenerator();
