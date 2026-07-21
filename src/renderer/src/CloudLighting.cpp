@@ -21,23 +21,26 @@ bool CloudLighting::StartUp()
     desc.SampleDesc.Count = 1;
     desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-    desc.Format = DXGI_FORMAT_R16_FLOAT;
+    desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;   // sun uses .r; six-way uses all four
     m_cache = m_Awesome->CreateBuffer(desc, L"Cloud Light Cache", D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    if (!m_cache) return false;
+    m_cache1 = m_Awesome->CreateBuffer(desc, L"Cloud Light Cache Z", D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    if (!m_cache || !m_cache1) return false;
 
     {
         D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
-        srv.Format = DXGI_FORMAT_R16_FLOAT;
+        srv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
         srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
         srv.Texture3D.MipLevels = 1;
         srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        m_clouds->WriteSRV(SRV_LightCache, m_cache, &srv);
+        m_clouds->WriteSRV(SRV_LightCache, m_cache, &srv);   // t8
+        m_clouds->WriteSRV(SRV_Weather, m_cache1, &srv);     // t3 (six-way +Z,-Z)
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC uav = {};
-        uav.Format = DXGI_FORMAT_R16_FLOAT;
+        uav.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
         uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE3D;
         uav.Texture3D.WSize = c_dimZ;
-        m_clouds->WriteUAV(UAV_LightCache, m_cache, &uav);
+        m_clouds->WriteUAV(UAV_LightCache, m_cache, &uav);   // u6
+        m_clouds->WriteUAV(UAV_Weather, m_cache1, &uav);     // u3
     }
 
     std::vector<D3D_SHADER_MACRO*> perms;
@@ -51,6 +54,7 @@ bool CloudLighting::StartUp()
 bool CloudLighting::TearDown()
 {
     SafeRelease(m_cache);
+    SafeRelease(m_cache1);
     return true;
 }
 
@@ -58,7 +62,9 @@ void CloudLighting::Build()
 {
     ID3D12GraphicsCommandList* cl = m_Awesome->GetCommandList();
     m_Awesome->TransitionResource(m_cache, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    m_Awesome->TransitionResource(m_cache1, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     m_Awesome->GetComputeSystem()->SetPSO(m_buildPSO);
     cl->Dispatch(c_dimX / 4, c_dimY / 4, c_slabZ / 4);
     m_Awesome->TransitionResource(m_cache, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    m_Awesome->TransitionResource(m_cache1, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 }

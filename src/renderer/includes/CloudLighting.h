@@ -31,7 +31,8 @@ namespace Awesome
     private:
         AwesomeGraphics* m_Awesome;
         CloudSystem* m_clouds;
-        ID3D12Resource* m_cache = nullptr;
+        ID3D12Resource* m_cache = nullptr;    // sun: .r=tau; six-way: +X,-X,+Y,-Y
+        ID3D12Resource* m_cache1 = nullptr;   // six-way: +Z,-Z
         uint32 m_buildPSO = (uint32)-1;
     };
 }

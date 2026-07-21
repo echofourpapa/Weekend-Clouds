@@ -13,7 +13,6 @@ struct CloudTile { uint count; uint pad0, pad1, pad2; uint macroIdx[CLOUD_MAX_TI
 StructuredBuffer<CloudTile> g_tiles : register(t2);
 
 Texture2D<float>    g_sceneDepth : register(t6);
-Texture3D<float>    g_lightCache : register(t8);
 RWTexture2D<float4> g_scatter    : register(u7);
 RWTexture2D<float>  g_cloudDepth : register(u8);
 
@@ -104,12 +103,13 @@ COMPUTE_MAIN
     float cosVS = dot(dir, normalize(g_sunDirWS.xyz));
     float powder = 1.0 - exp(-2.0 * tauC);                 // dark cores/edges
     float3 sunLit;
-    if (g_mode.y == CLOUD_LIGHT_SUNCACHE)
+    if (g_mode.y == CLOUD_LIGHT_SUNCACHE || g_mode.y == CLOUD_LIGHT_SIXWAY)
     {
-        // Real self-shadowing: sample the sun-transmittance field cache at the
-        // scatter point (o already includes windOffset, i.e. macro space).
+        // Real self-shadowing: sample the field cache at the scatter point
+        // (o already includes windOffset, i.e. macro space). SampleSunTau
+        // handles both the sun-channel and six-way cache layouts.
         float3 scatterWS = o + dir * bestT;
-        float tauSun = SampleSunTau(g_lightCache, scatterWS);
+        float tauSun = SampleSunTau(scatterWS);
         sunLit = CloudSunScatter(tauSun, cosVS) * powder;
     }
     else
@@ -132,7 +132,7 @@ COMPUTE_MAIN
     else if (dbg == CLOUD_DBG_CACHE_SLICE)
     {
         // Visualise the light cache at this pixel's scatter altitude.
-        float tauSun = SampleSunTau(g_lightCache, o + dir * bestT);
+        float tauSun = SampleSunTau(o + dir * bestT);
         inscatter = Inferno(1.0 - exp(-tauSun));
     }
 

@@ -97,7 +97,7 @@ COMPUTE_MAIN
     // Baked-vs-reference lighting diff (debug 6): cache tau vs exact RayQuery tau.
     if (g_mode.x == CLOUD_DBG_LIGHT_DIFF)
     {
-        float tc = SampleSunTau(g_lightCache, scatterWS);
+        float tc = SampleSunTau(scatterWS);
         float tr = SunTauReference(scatterWS);
         g_scatter[px] = float4((abs(tc - tr) * 0.5).xxx, T);
         g_cloudDepth[px] = (T > 0.995) ? 0.0 : bestT;
@@ -106,7 +106,7 @@ COMPUTE_MAIN
 
     float tauSun;
     if (g_mode.y == CLOUD_LIGHT_REFERENCE)   tauSun = SunTauReference(scatterWS);   // exact
-    else                                     tauSun = SampleSunTau(g_lightCache, scatterWS);
+    else                                     tauSun = SampleSunTau(scatterWS);
     float3 sunLit = CloudSunScatter(tauSun, cosVS) * powder;
     float3 skyAmb = float3(0.30, 0.45, 0.65) * g_ambientParams.x * (0.4 + 0.6 * saturate(bestHeight));
 
