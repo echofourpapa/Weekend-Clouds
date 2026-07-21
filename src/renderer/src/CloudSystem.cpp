@@ -3,6 +3,7 @@
 #include "SkyAtmosphere.h"
 #include "CloudGenerator.h"
 #include "CloudLighting.h"
+#include "RTScene.h"
 #include "Awesome.h"
 #include "Compute.h"
 #include "Deferred.h"
@@ -21,11 +22,13 @@ CloudSystem::CloudSystem(AwesomeGraphics* Awesome)
     , m_sky(new SkyAtmosphere(Awesome, this))
     , m_generator(new CloudGenerator(Awesome, this))
     , m_lighting(new CloudLighting(Awesome, this))
+    , m_rtScene(new RTScene(Awesome))
 {
 }
 
 CloudSystem::~CloudSystem()
 {
+    delete m_rtScene;
     delete m_lighting;
     delete m_generator;
     delete m_sky;
@@ -182,6 +185,8 @@ bool CloudSystem::StartUp()
         return false;
     if (!m_lighting->StartUp())
         return false;
+    if (!m_rtScene->StartUp())
+        return false;
 
     // Trace targets (P1.4 is full-res; P5 moves the trace to 1280x720). Sized to
     // the current window; a window resize is not yet handled for cloud targets.
@@ -268,6 +273,15 @@ bool CloudSystem::StartUp()
         m_reprojPSO = m_Awesome->GetComputeSystem()->CreatePipeline(reproj, m_rootSignature);
         m_denoisePSO = m_Awesome->GetComputeSystem()->CreatePipeline(denoise, m_rootSignature);
         if (m_compositePSO == (uint32)-1 || m_brutePSO == (uint32)-1 || m_binPSO == (uint32)-1 || m_tracePSO == (uint32)-1 || m_reprojPSO == (uint32)-1 || m_denoisePSO == (uint32)-1) return false;
+
+        // RayQuery A/B trace only on RT-capable devices (compiling a shader that
+        // uses RayQuery into a PSO requires tier 1.1 support).
+        if (m_Awesome->IsRaytracingSupported())
+        {
+            uint32 rq = m_Awesome->GetComputeSystem()->CompileShader(L"CloudTraceRQ-c", perms);
+            if (rq != invalidIndex32)
+                m_rqPSO = m_Awesome->GetComputeSystem()->CreatePipeline(rq, m_rootSignature);
+        }
     }
 
     return true;
@@ -275,6 +289,7 @@ bool CloudSystem::StartUp()
 
 bool CloudSystem::TearDown()
 {
+    m_rtScene->TearDown();
     m_lighting->TearDown();
     m_generator->TearDown();
     m_sky->TearDown();
@@ -411,7 +426,7 @@ void CloudSystem::BindCommon()
     cl->SetComputeRootConstantBufferView(0, m_constantBuffer[f]->GetGPUVirtualAddress());
     cl->SetComputeRootDescriptorTable(1, m_srvBlocks[f][0][0].gpuHandle);
     cl->SetComputeRootDescriptorTable(2, m_uavBlocks[f][0][0].gpuHandle);
-    // param 3 (TLAS) left unset until RQ paths exist (P2); those shaders don't read t15.
+    cl->SetComputeRootShaderResourceView(3, 0);   // TLAS null by default; RQ path sets the real one
 }
 
 void CloudSystem::Render(float delta)
@@ -423,6 +438,13 @@ void CloudSystem::Render(float delta)
 
     // Regenerate (CPU, on param change) + upload before constants so counts are fresh.
     m_generator->EnsureUploaded();
+
+    // Rebuild the DXR acceleration structure when generation changed (RT-only,
+    // for the RayQuery A/B path). Records on the same command list after upload.
+    bool rebuildAS = m_generator->ConsumeRebuildFlag();
+    if (rebuildAS && m_Awesome->IsRaytracingSupported() && m_rqPSO != (uint32)-1)
+        m_rtScene->Build(m_generator->GetAABBBuffer(), m_generator->GetMacroCount());
+
     UpdateConstants(delta);
 
     uint32 f = CurBlock();
@@ -483,8 +505,10 @@ void CloudSystem::Render(float delta)
     // (bin + tiled trace) or the brute A/B path, per traversalMode.
     if (m_generator->GetMacroCount() > 0)
     {
-        bool tiled = (m_traversalMode == 0);
         ID3D12GraphicsCommandList* cl = m_Awesome->GetCommandList();
+        bool useRQ = (m_traversalMode == 1 || m_traversalMode == 2)
+                  && m_rqPSO != (uint32)-1 && m_rtScene->IsBuilt();
+        bool tiled = (m_traversalMode == 0);
 
         if (tiled)
         {
@@ -496,10 +520,18 @@ void CloudSystem::Render(float delta)
             m_Awesome->TransitionResource(m_tileBuf, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         }
 
-        PIXScopedEvent(cl, 0, tiled ? "Cloud Trace (tiled)" : "Cloud Trace (brute)");
+        PIXScopedEvent(cl, 0, useRQ ? "Cloud Trace (RQ)" : (tiled ? "Cloud Trace (tiled)" : "Cloud Trace (brute)"));
         m_Awesome->TransitionResource(m_scatterTex, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         m_Awesome->TransitionResource(m_cloudDepthTex, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        m_Awesome->GetComputeSystem()->SetPSO(tiled ? m_tracePSO : m_brutePSO);
+        if (useRQ)
+        {
+            cl->SetComputeRootShaderResourceView(3, m_rtScene->GetTLASAddress());   // t15 TLAS
+            m_Awesome->GetComputeSystem()->SetPSO(m_rqPSO);
+        }
+        else
+        {
+            m_Awesome->GetComputeSystem()->SetPSO(tiled ? m_tracePSO : m_brutePSO);
+        }
         cl->Dispatch((m_traceW + 7) / 8, (m_traceH + 7) / 8, 1);
         m_Awesome->TransitionResource(m_scatterTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         m_Awesome->TransitionResource(m_cloudDepthTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);

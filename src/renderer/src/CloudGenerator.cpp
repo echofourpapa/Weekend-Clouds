@@ -73,7 +73,8 @@ bool CloudGenerator::StartUp()
 {
     m_macroBuf = CreateStructured(m_Awesome, c_maxMacros, sizeof(CloudMacro), D3D12_RESOURCE_STATE_COPY_DEST, L"Cloud Macro Buffer");
     m_kernelBuf = CreateStructured(m_Awesome, c_maxKernels, sizeof(CloudKernelPacked), D3D12_RESOURCE_STATE_COPY_DEST, L"Cloud Kernel Buffer");
-    if (!m_macroBuf || !m_kernelBuf) return false;
+    m_aabbBuf = CreateStructured(m_Awesome, c_maxMacros, sizeof(D3D12_RAYTRACING_AABB), D3D12_RESOURCE_STATE_COPY_DEST, L"Cloud AABB Buffer");
+    if (!m_macroBuf || !m_kernelBuf || !m_aabbBuf) return false;
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
     srv.Format = DXGI_FORMAT_UNKNOWN;
@@ -92,6 +93,7 @@ bool CloudGenerator::TearDown()
 {
     SafeRelease(m_macroBuf);
     SafeRelease(m_kernelBuf);
+    SafeRelease(m_aabbBuf);
     return true;
 }
 
@@ -99,6 +101,7 @@ void CloudGenerator::Regenerate()
 {
     m_cpuMacros.clear();
     m_cpuKernels.clear();
+    m_cpuAABBs.clear();
     const uint32 K = m_kernelsPerMacro;
     const int G = c_gridDim;
     const float half = 0.5f * G * c_cellMeters;
@@ -197,6 +200,12 @@ void CloudGenerator::Regenerate()
             p.b[3] = ks & 0xFFFF;
             m_cpuKernels.push_back(p);
         }
+
+        // AABB for the DXR macro BLAS (conservative isotropic box at ±boundRadius).
+        D3D12_RAYTRACING_AABB ab;
+        ab.MinX = m.position[0] - m.boundRadius; ab.MinY = m.position[1] - m.boundRadius; ab.MinZ = m.position[2] - m.boundRadius;
+        ab.MaxX = m.position[0] + m.boundRadius; ab.MaxY = m.position[1] + m.boundRadius; ab.MaxZ = m.position[2] + m.boundRadius;
+        m_cpuAABBs.push_back(ab);
     }
 
     m_macroCount = (uint32)m_cpuMacros.size();
@@ -219,6 +228,7 @@ void CloudGenerator::EnsureUploaded()
     {
         m_Awesome->TransitionResource(m_macroBuf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
         m_Awesome->TransitionResource(m_kernelBuf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
+        m_Awesome->TransitionResource(m_aabbBuf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
     }
 
     // AwesomeGraphics::UploadBuffer wants a desc whose Width is the ACTUAL byte
@@ -240,6 +250,17 @@ void CloudGenerator::EnsureUploaded()
         m_Awesome->UploadBuffer(m_kernelBuf, kd, kd.Width, (const uint8*)m_cpuKernels.data());
     }
     m_Awesome->TransitionResource(m_kernelBuf, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    if (!m_cpuAABBs.empty())
+    {
+        D3D12_RESOURCE_DESC ad = m_aabbBuf->GetDesc();
+        ad.Width = (uint64)m_cpuAABBs.size() * sizeof(D3D12_RAYTRACING_AABB);
+        ad.Flags = D3D12_RESOURCE_FLAG_NONE;
+        m_Awesome->UploadBuffer(m_aabbBuf, ad, ad.Width, (const uint8*)m_cpuAABBs.data());
+    }
+    m_Awesome->TransitionResource(m_aabbBuf, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
     m_uploaded = true;
     m_inReadState = true;
+    m_rebuildAS = true;   // acceleration structure needs a rebuild from the new AABBs
 }

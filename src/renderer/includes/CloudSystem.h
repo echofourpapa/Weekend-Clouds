@@ -12,6 +12,7 @@ namespace Awesome
     class SkyAtmosphere;
     class CloudGenerator;
     class CloudLighting;
+    class RTScene;
 
     // Shared descriptor-table slot assignments (docs/PLAN.md 3.5). Every cloud
     // pass binds the full SRV + UAV tables; a pass only touches the slots it needs.
@@ -115,7 +116,9 @@ namespace Awesome
         SkyAtmosphere* m_sky;
         CloudGenerator* m_generator;
         CloudLighting* m_lighting;
+        RTScene* m_rtScene;
         uint32 m_cacheSlice = 0;
+        uint32 m_rqPSO = (uint32)-1;
 
         ID3D12RootSignature* m_rootSignature = nullptr;
         ID3D12Resource* m_scatterTex = nullptr;    // RGBA16F: rgb inscatter, a transmittance

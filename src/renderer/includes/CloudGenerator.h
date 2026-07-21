@@ -55,6 +55,9 @@ namespace Awesome
 
         uint32 GetMacroCount() const { return m_macroCount; }
         uint32 GetKernelCount() const { return m_kernelCount; }
+        ID3D12Resource* GetAABBBuffer() const { return m_aabbBuf; }   // D3D12_RAYTRACING_AABB per macro
+        // True once after each upload, so the caller can rebuild the acceleration structure.
+        bool ConsumeRebuildFlag() { bool r = m_rebuildAS; m_rebuildAS = false; return r; }
 
         // ImGui-facing generation params.
         float m_coverage = 0.5f;
@@ -72,8 +75,11 @@ namespace Awesome
         CloudSystem* m_clouds;
         ID3D12Resource* m_macroBuf = nullptr;
         ID3D12Resource* m_kernelBuf = nullptr;
+        ID3D12Resource* m_aabbBuf = nullptr;   // D3D12_RAYTRACING_AABB per macro (DXR A/B path)
         std::vector<CloudMacro> m_cpuMacros;
         std::vector<CloudKernelPacked> m_cpuKernels;
+        std::vector<D3D12_RAYTRACING_AABB> m_cpuAABBs;
+        bool m_rebuildAS = false;
         uint32 m_macroCount = 0;
         uint32 m_kernelCount = 0;
         bool m_dirty = true;
