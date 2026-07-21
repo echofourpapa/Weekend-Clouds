@@ -201,7 +201,8 @@ bool CloudSystem::StartUp()
     m_history[0] = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud History 0");
     m_history[1] = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud History 1");
     m_denoiseTex = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud Denoise");
-    if (!m_scatterTex || !m_cloudDepthTex || !m_history[0] || !m_history[1] || !m_denoiseTex) return false;
+    m_denoiseTex2 = CreateTex2D(m_traceW, m_traceH, DXGI_FORMAT_R16G16B16A16_FLOAT, L"Cloud Denoise Atrous");
+    if (!m_scatterTex || !m_cloudDepthTex || !m_history[0] || !m_history[1] || !m_denoiseTex || !m_denoiseTex2) return false;
 
     // Tile buffer: one CloudTile per 16x16 tile (macro lists), rebuilt each frame.
     {
@@ -245,12 +246,16 @@ bool CloudSystem::StartUp()
         // the reproject reads it there. (Names in the enum predate this reuse.)
         srv.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
         WriteSRV(SRV_HistDepth, m_denoiseTex, &srv);
+        // À-trous pass-1 scratch lives in the (unused) MacroGrid slot t14; the
+        // stride-2 pass reads it there. (Enum name predates this reuse.)
+        WriteSRV(SRV_MacroGrid, m_denoiseTex2, &srv);
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC uav = {};
         uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
         uav.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
         WriteUAV(UAV_Scatter, m_scatterTex, &uav);
         WriteUAV(UAV_DenoiseTmp, m_denoiseTex, &uav);
+        WriteUAV(UAV_MacroGrid, m_denoiseTex2, &uav);   // à-trous pass-1 output (u14)
         uav.Format = DXGI_FORMAT_R16_FLOAT;
         WriteUAV(UAV_CloudDepth, m_cloudDepthTex, &uav);
     }
@@ -265,14 +270,16 @@ bool CloudSystem::StartUp()
         uint32 trace = m_Awesome->GetComputeSystem()->CompileShader(L"CloudTrace-c", perms);
         uint32 reproj = m_Awesome->GetComputeSystem()->CompileShader(L"CloudReproject-c", perms);
         uint32 denoise = m_Awesome->GetComputeSystem()->CompileShader(L"CloudDenoise-c", perms);
-        if (comp == invalidIndex32 || brute == invalidIndex32 || bin == invalidIndex32 || trace == invalidIndex32 || reproj == invalidIndex32 || denoise == invalidIndex32) return false;
+        uint32 denoise2 = m_Awesome->GetComputeSystem()->CompileShader(L"CloudDenoise2-c", perms);
+        if (comp == invalidIndex32 || brute == invalidIndex32 || bin == invalidIndex32 || trace == invalidIndex32 || reproj == invalidIndex32 || denoise == invalidIndex32 || denoise2 == invalidIndex32) return false;
         m_compositePSO = m_Awesome->GetComputeSystem()->CreatePipeline(comp, m_rootSignature);
         m_brutePSO = m_Awesome->GetComputeSystem()->CreatePipeline(brute, m_rootSignature);
         m_binPSO = m_Awesome->GetComputeSystem()->CreatePipeline(bin, m_rootSignature);
         m_tracePSO = m_Awesome->GetComputeSystem()->CreatePipeline(trace, m_rootSignature);
         m_reprojPSO = m_Awesome->GetComputeSystem()->CreatePipeline(reproj, m_rootSignature);
         m_denoisePSO = m_Awesome->GetComputeSystem()->CreatePipeline(denoise, m_rootSignature);
-        if (m_compositePSO == (uint32)-1 || m_brutePSO == (uint32)-1 || m_binPSO == (uint32)-1 || m_tracePSO == (uint32)-1 || m_reprojPSO == (uint32)-1 || m_denoisePSO == (uint32)-1) return false;
+        m_denoise2PSO = m_Awesome->GetComputeSystem()->CreatePipeline(denoise2, m_rootSignature);
+        if (m_compositePSO == (uint32)-1 || m_brutePSO == (uint32)-1 || m_binPSO == (uint32)-1 || m_tracePSO == (uint32)-1 || m_reprojPSO == (uint32)-1 || m_denoisePSO == (uint32)-1 || m_denoise2PSO == (uint32)-1) return false;
 
         // RayQuery A/B trace only on RT-capable devices (compiling a shader that
         // uses RayQuery into a PSO requires tier 1.1 support).
@@ -299,6 +306,7 @@ bool CloudSystem::TearDown()
     SafeRelease(m_history[0]);
     SafeRelease(m_history[1]);
     SafeRelease(m_denoiseTex);
+    SafeRelease(m_denoiseTex2);
     for (uint32 i = 0; i < c_frameBufferCount; ++i)
     {
         if (m_constantBuffer[i])
@@ -550,12 +558,25 @@ void CloudSystem::Render(float delta)
         m_Awesome->TransitionResource(m_scatterTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         m_Awesome->TransitionResource(m_cloudDepthTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
-        // Spatial denoise: scatter -> denoiseTex (passthrough unless masking is on).
-        PIXScopedEvent(cl, 0, "Cloud Denoise");
-        m_Awesome->TransitionResource(m_denoiseTex, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        m_Awesome->GetComputeSystem()->SetPSO(m_denoisePSO);
-        cl->Dispatch((m_traceW + 7) / 8, (m_traceH + 7) / 8, 1);
-        m_Awesome->TransitionResource(m_denoiseTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        // À-trous spatial denoise (passthrough unless masking is on). Two passes:
+        // pass 1 (stride 1) scatter -> denoiseTex2 scratch, pass 2 (stride 2)
+        // denoiseTex2 -> denoiseTex, widening support to ~9x9 at 5x5 cost. The
+        // final lands in denoiseTex, which the reproject reads.
+        uint32 dgx = (m_traceW + 7) / 8, dgy = (m_traceH + 7) / 8;
+        {
+            PIXScopedEvent(cl, 0, "Cloud Denoise (stride 1)");
+            m_Awesome->TransitionResource(m_denoiseTex2, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            m_Awesome->GetComputeSystem()->SetPSO(m_denoisePSO);
+            cl->Dispatch(dgx, dgy, 1);
+            m_Awesome->TransitionResource(m_denoiseTex2, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        }
+        {
+            PIXScopedEvent(cl, 0, "Cloud Denoise (stride 2)");
+            m_Awesome->TransitionResource(m_denoiseTex, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            m_Awesome->GetComputeSystem()->SetPSO(m_denoise2PSO);
+            cl->Dispatch(dgx, dgy, 1);
+            m_Awesome->TransitionResource(m_denoiseTex, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        }
 
         // Temporal reprojection: denoised scatter + prev history -> cur history.
         PIXScopedEvent(cl, 0, "Cloud Reproject");

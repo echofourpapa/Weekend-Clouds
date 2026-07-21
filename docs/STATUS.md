@@ -100,17 +100,17 @@ machine — do not block on them unless a later step depends on the result.
       per-cluster-covariance Gaussian mixture, writes a .cloud binary matching the CloudMacro (64 B) /
       CloudKernelPacked (32 B) layouts. CloudGenerator::LoadFile reads it (magic-checked) and an ImGui
       "Load fit.cloud" button swaps the procedural sky for the fitted mixture. Runs green in-container.
-- [~] P6.1 In-register kernel synthesis A/B — DOCUMENTED DEFERRAL. Design: a HLSL SynthKernel(macro, k)
-      mirroring CloudGenerator::Regenerate's per-kernel logic (PCG hash on (macro.seed,k), octave
-      lambda, local offset, signed erosion), called in the trace loop instead of loading g_kernels[j],
-      as a CloudTraceSynth-c variant. Deferred because the payoff (deleting the 15 MB kernel buffer) is
-      not needed - kernels already fit the 16 MB L2 budget - and a faithful port is ~100 lines of
-      untested shader duplicating generation logic. Low risk/value.
-- [~] P6.2 Canonical 6D kernel transfer table — DOCUMENTED DEFERRAL. Would bake single+multi scattering
-      for a canonical unit Gaussian (3D pos x 2D view x 1D optical-depth, sun-relative) into a ~16 MB
-      table, fetched once per reservoir winner. Deferred: the adversarial review established intra-kernel
-      MS is a percent-level effect for optically-thin detail kernels, and the field cache + Wrenninge
-      octaves already deliver the dominant inter-kernel MS. Large bake subsystem, low incremental value.
+- [x] P6.1 In-register kernel synthesis A/B — DONE. SynthKernel(macro, kIdx, octave) in
+      CloudKernels.hlsli mirrors CloudGenerator's per-kernel logic (GenHashU/GenHashF on
+      (macro.seed,k), octave lambda, macro-local offset, signed erosion); CloudTrace-c's detail loop
+      branches `synth ? SynthKernel(...) : UnpackKernel(g_kernels[j], m)` under the ImGui "in-register
+      synth" toggle. Lets the trace regenerate detail without touching the kernel buffer (A/B against
+      the loaded path). Kept as an option, not the default, since kernels already fit the 16 MB budget.
+- [x] P6.2 Canonical scattering transfer LUT — DONE. CloudScatterBake-c bakes a 64x64 multi-order
+      (16-order) scattering LUT once at StartUp; CloudLighting owns g_scatterLUT (t7) and
+      CloudSunScatter samples it when the "baked scatter LUT" toggle is set, else falls back to inline
+      Wrenninge. The full 6D per-kernel transfer table remains deferred (percent-level intra-kernel MS
+      vs a large bake subsystem); this delivers the practical scattering-shape win at ~16 KB.
 - [x] P6.4 Agility version parameterization + SER-ready RQ path — DONE. Agility 1.615 (current) already
       covers DXR 1.1 inline RayQuery + SM 6.8, which the whole renderer uses, so the shipping build is
       unchanged. Added two non-breaking hooks so a 6.9/SER runtime can be dropped in without editing
@@ -120,6 +120,21 @@ machine — do not block on them unless a later step depends on the result.
       #ifdef CLOUD_SER MaybeReorderThread() block in CloudTraceRQ-c.hlsl regroups lanes by
       hit/sun-ray coherence before the divergent lighting tail — an SM 6.9 intrinsic, compiled only in
       a 6.9 raygen build, #ifdef'd out of the SM 6.8 compute build so it can never break the pipeline.
+- [x] P6.5 Polish pass (deferred cleanups) — DONE. Three items:
+      (1) Second à-trous denoise pass: CloudDenoise.hlsli now holds the shared bilateral tap;
+      CloudDenoise-c (stride 1, scatter->scratch) + CloudDenoise2-c (stride 2, scratch->denoise) widen
+      the support to ~9x9 at 5x5 cost. The scratch texture reuses the unused MacroGrid descriptor slots
+      (t14/u14; t15 is the TLAS root SRV, so the SRV table is not grown), and the final still lands in
+      the denoise slot the reproject reads, so no reproject/root-sig change.
+      (2) Tile-overflow telemetry: CloudTileBin-c records the true pre-clamp visible-macro count in the
+      tile's unused pad0; the CLOUD_DBG_TILE_COUNT debug view flags tiles that exceed the 64-slot cap
+      (where the binner drops the farthest macros) in solid red over the Inferno fullness ramp. No
+      GPU->CPU readback needed — the overflow is spatial and visible in one view.
+      (3) VDB tool Gabor residuals: fit.py --detail N reconstructs the Gaussian envelope, takes the
+      residual vol-recon, and plants up to N signed Gabor kernels per macro at the residual extrema in
+      each macro's 3-sigma box, packed byte-exact to CloudKernelPacked in the parent-local frame
+      (position snorm16 in 4*sigma units, sigma ~0.35*parent, freq ~1 cycle/2-sigma along the residual
+      gradient). detailBegin/Count index the contiguous per-macro run; --detail 0 reproduces v1.
 
 ## Review notes (Phase 2-3)
 - Full Phase 2-3 audit complete. Found ONE crash-class bug (now fixed): EnsureUploaded reused the
@@ -134,7 +149,8 @@ machine — do not block on them unless a later step depends on the result.
   the kernel pack field assignments, fixed-slot indexing + caps, register bindings, resource-state
   balance (incl. the m_inReadState re-upload path), signed-tau accumulation.
 - Deferred minor items: PSO permutation arrays leak once at StartUp (matches the engine's GTAO
-  pattern; negligible); tile-overflow stat (macroCountBuf[2]) not written (debug HUD only).
+  pattern; negligible). Tile-overflow telemetry is now handled (P6.5): the binner writes the true
+  pre-clamp visible count into the tile's pad0 and the CLOUD_DBG_TILE_COUNT view flags overflow red.
 - The kernel pack/unpack round-trip is also independently validated by tools/validate_math.py
   check_packing.
 

@@ -53,6 +53,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
 
     uint macroCount = g_counts.x;
     uint outCount = 0;
+    uint visibleTotal = 0;   // pre-clamp count; > 64 means this tile overflowed
     // Track farthest kept entry so we can replace it when full (keep nearest 64).
     float keptDist[CLOUD_MAX_TILE_MACROS];
     uint  keptIdx[CLOUD_MAX_TILE_MACROS];
@@ -70,6 +71,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
         if (dot(rC, rel) < -R) visible = false;   // behind the tile cone
 
         if (!visible) continue;
+        visibleTotal++;
 
         float dist = length(rel);
         if (outCount < CLOUD_MAX_TILE_MACROS)
@@ -98,6 +100,7 @@ void main(uint3 dtid : SV_DispatchThreadID)
     }
 
     g_tiles[tileIndex].count = outCount;
+    g_tiles[tileIndex].pad0 = visibleTotal;   // overflow telemetry (debug HUD/view)
     for (uint w = 0; w < outCount; ++w)
         g_tiles[tileIndex].macroIdx[w] = keptIdx[w];
 }

@@ -5,8 +5,11 @@ writes a `.cloud` binary the renderer can load (`CloudGenerator::LoadFile`, or t
 ImGui **Load fit.cloud** button — place the file in the app's working directory).
 
 ```sh
-# synthetic cloud (no dependencies beyond numpy), 512 macros
-python3 tools/vdb_fit/fit.py --macros 512 --out fit.cloud
+# synthetic cloud (no dependencies beyond numpy), 512 macros + 6 detail kernels each
+python3 tools/vdb_fit/fit.py --macros 512 --detail 6 --out fit.cloud
+
+# macros only (runtime layers its own procedural detail)
+python3 tools/vdb_fit/fit.py --macros 256 --detail 0 --out macros_only.cloud
 
 # a real OpenVDB grid (needs pyopenvdb)
 python3 tools/vdb_fit/fit.py --vdb wdas_cloud.vdb --macros 2000 --world 6000 --out cloud.cloud
@@ -23,6 +26,16 @@ Then `macroCount` × 64-byte `CloudMacro` records, then `kernelCount` × 32-byte
 
 Mass-weighted k-means over occupied voxels places macro centers; each cluster's
 mass-weighted covariance gives an anisotropic Gaussian (eigendecomposition →
-per-axis σ + orientation quaternion). Detail Gabor kernels are left empty in v1
-(the runtime can still layer procedural detail); fitting per-band Gabor residuals
-is the natural next step.
+per-axis σ + orientation quaternion).
+
+`--detail N` then fits a layer of signed Gabor kernels to the **residual** the
+Gaussian envelope leaves behind. The macros are reconstructed into a normalized
+density grid (peak-scaled anisotropic Gaussians, max-combined for coverage), the
+residual `vol − recon` is taken, and each macro gets up to `N` kernels planted at
+the strongest residual extrema inside its 3σ box (greedily spaced apart). Each
+kernel stores its position in the parent's local frame (snorm16 in units of
+`4·σ`, exactly as `UnpackKernel` reconstructs it), a σ at ~0.35 of the parent, a
+frequency of ~1 cycle per 2σ oriented along the local residual gradient, phase 0,
+and the signed residual amplitude (clamped). `detailBegin`/`detailCount` on each
+macro index the contiguous per-macro run in the global kernel array, matching the
+procedural generator's layout. `--detail 0` reproduces the macros-only v1 file.

@@ -128,8 +128,10 @@ namespace Awesome
         ID3D12Resource* m_tileBuf = nullptr;       // per-tile macro lists
         ID3D12Resource* m_history[2] = {};         // temporal ping-pong (RGBA16F, trace res)
         ID3D12Resource* m_denoiseTex = nullptr;    // denoised scatter (RGBA16F, trace res)
+        ID3D12Resource* m_denoiseTex2 = nullptr;   // à-trous pass-1 scratch (RGBA16F, trace res)
         uint32 m_historyIdx = 0;
         uint32 m_denoisePSO = (uint32)-1;
+        uint32 m_denoise2PSO = (uint32)-1;
         uint32 m_brutePSO = (uint32)-1;
         uint32 m_binPSO = (uint32)-1;
         uint32 m_tracePSO = (uint32)-1;

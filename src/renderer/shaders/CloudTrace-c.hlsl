@@ -125,7 +125,11 @@ COMPUTE_MAIN
     uint dbg = g_mode.x;
     if (dbg == CLOUD_DBG_TRANSMIT)          inscatter = T.xxx;
     else if (dbg == CLOUD_DBG_HEATMAP)      inscatter = Inferno(visited / 64.0);
-    else if (dbg == CLOUD_DBG_TILE_COUNT)   inscatter = Inferno(tile.count / (float)CLOUD_MAX_TILE_MACROS);
+    else if (dbg == CLOUD_DBG_TILE_COUNT)
+        // Fullness by Inferno; tiles whose true (pre-clamp) macro count exceeds
+        // the 64-slot cap -- where the binner drops the farthest macros -- flag red.
+        inscatter = (tile.pad0 > CLOUD_MAX_TILE_MACROS) ? float3(1.0, 0.0, 0.0)
+                                                        : Inferno(tile.count / (float)CLOUD_MAX_TILE_MACROS);
     else if (dbg == CLOUD_DBG_FREQBANDS)    inscatter = bands / max(max(bands.r, bands.g), max(bands.b, 0.02));
     else if (dbg == CLOUD_DBG_DEPTH)        inscatter = frac(bestT / 1000.0).xxx;
     else if (dbg == CLOUD_DBG_MASK_RATE)    inscatter = Inferno(survived / max((float)visited, 1.0));
