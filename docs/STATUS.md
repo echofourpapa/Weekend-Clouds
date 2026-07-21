@@ -39,7 +39,10 @@ machine — do not block on them unless a later step depends on the result.
 - [x] P2.2 Tiled trace (CloudTrace-c, macros-only, must match brute pixel-for-pixel) + traversal-mode
       combo (Tiled default / Brute A/B; RQ modes fall back to brute until P2.3) + heatmap/tile-count
       debug views
-- [ ] P2.3 RTScene + CloudTraceRQ-c entry (guarded on m_rtSupported)
+- [x] P2.3 RTScene + CloudTraceRQ-c entry (guarded on m_rtSupported). Procedural-AABB BLAS + single-
+      instance TLAS (RTScene.cpp, PREFER_FAST_TRACE); CloudTraceRQ-c does inline RayQuery over the macro
+      AABBs, integrates the same envelope+detail, and is compiled into a PSO only when RT tier >= 1.1.
+      Traversal combo exposes RQ Macro/RQ Kernel alongside Tiled/Brute.
 
 ## Phase 3 — generation
 - [x] P3.1 Procedural generation (CPU, amortized on regen — C4-compliant since the per-frame path
@@ -54,7 +57,9 @@ machine — do not block on them unless a later step depends on the result.
 ## Phase 4 — lighting
 - [x] P4.0 Approximate lighting (Beer-powder + height gradient + sky ambient) — no new infra, makes
       clouds read as 3D. Placeholder until the field cache lands.
-- [ ] P4.1 Static-camera accumulation mode (needed once trace is stochastic / half-res)
+- [x] P4.1 Static-camera accumulation mode. The reproject accumulates unweighted when the camera and
+      time-of-day are unchanged (temporal.z accumCount, temporal.w blend cap), reset on any change, so a
+      parked camera converges the stochastic/half-res trace for validation. ImGui "Accumulate" toggle.
 - [x] P4.2 CloudLighting + sun-transmittance field cache (128x32x128 R16F 3D texture) + trace
       consumption (lightMode 0). No macro grid needed: per voxel the cache sums the closed-form
       optical depth of every macro along the sun ray with a cheap perpendicular-distance reject, so
@@ -62,12 +67,13 @@ machine — do not block on them unless a later step depends on the result.
       Trace samples it trilinearly at o+bestT*dir (macro space) → Wrenninge multi-octave scatter.
       Cache box: cubic 256 m voxels centred on camera-in-macro-space, XZ snapped. lightMode!=0 keeps
       the P4.0 height heuristic as fallback.
-- [~] P4.3 RT-reference lighting (lightMode 2, RQ traversal): a second inline RayQuery toward the sun
-      at the scatter point gives exact sun optical depth - the reference the field cache approximates.
-      Baked-vs-reference diff view (debug 6) shows |cache tau - reference tau|. SCOPED DEFERRAL:
-      the six-way directional-transmittance cache variant is not built - the earlier design reviews
-      established it is inferior here (its low-sun/sunset failure is precisely why the sun-aligned
-      time-sliced cache is the default), so it is low-value validation. Documented, not implemented.
+- [x] P4.3 RT-reference lighting + six-way cache variant. lightMode 2 (RQ traversal) fires a second
+      inline RayQuery toward the sun at the scatter point for exact sun optical depth - the reference the
+      field cache approximates; the baked-vs-reference diff view (debug 6) shows |cache tau - reference
+      tau|. The six-way directional cache variant IS now built (CloudLightCache-c writes 6 axes into
+      cache0 RGBA + cache1 RG; SampleSunTau blends by squared cosine under lightMode SIXWAY) as an A/B
+      option - the sun-aligned time-sliced cache stays the default (the six-way low-sun/sunset weakness
+      is why), but both are selectable from the lighting combo for comparison.
 - [x] P4.4 Time-of-day scene lighting + exposure clamp. The scene sun's colour AND intensity now track
       time of day (warm/dim near the horizon, bright at noon, dark below) so the geometry lighting
       matches the sky - the dominant day/night effect, no shader surgery. Exposure clamp is the
@@ -85,10 +91,12 @@ machine — do not block on them unless a later step depends on the result.
       camera-motion reprojection via prevViewProj, 3x3 neighbourhood clamp, transmittance-delta
       disocclusion. Composite reads the reprojected result (t13). t9=prev / u10=cur / t13=cur-for-
       composite written per-frame into the [f][0] block (safe: block fenced 3 frames back).
-- [ ] P5.2c Spatial denoise (a-trous bilateral) before temporal — only if masking noise needs it.
-- [ ] P5.3 TAA sky fix (camera-only reprojection for depth==0 pixels) — DEFERRED (low impact: clouds
-      already stabilised by their own reproject, and the sky gradient is smooth so TAA's variance clip
-      barely touches it; the fix needs current/prev matrices added to the engine TAA constant buffer).
+- [x] P5.2c Spatial denoise (à-trous bilateral) before temporal. Two passes (stride 1 then stride 2,
+      P6.5) edge-stopped by cloud depth and transmittance; passthrough when masking is off, so it is
+      nearly free in the common case. See P6.5 for the second-pass plumbing.
+- [x] P5.3 TAA sky fix (camera-only reprojection for depth==0 pixels). TAA-c reprojects sky pixels by
+      camera motion (mul(mul(ndc, invViewProj), prevViewProj)) using invViewProj + prevViewProj added to
+      TAAConstants, so the sky no longer smears under the variance clip. Low impact but done.
 - [ ] P5.4 Perf tuning + acceptance-ladder verdict at 2560x1440 — USER-driven (needs Windows profiler
       numbers). Knobs exposed: Mask Aggressiveness, Survival Floor, Temporal Blend, Kernels/Macro,
       Octaves; m_traceScale (2=half, 4=quarter, StartUp-time). Profiler scopes: Cloud Light Cache /
