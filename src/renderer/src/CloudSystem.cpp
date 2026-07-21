@@ -342,6 +342,17 @@ void CloudSystem::UpdateConstants(float delta)
 
     Light* sun = m_Awesome->GetCurrentScene()->GetSunLight();
     sun->direction = { -sd.x, -sd.y, -sd.z };                  // engine stores direction of travel (from sun)
+    // Drive the scene sun's colour + intensity by time of day so the geometry
+    // lighting tracks the sky (P4.4): warm and dim near the horizon, bright at
+    // noon, dark below it. This is the dominant day/night effect; full sky->IBL
+    // ambient-colour prefilter is groundworked by SkyEquirect-c but left as a hook.
+    {
+        float up = sd.y;
+        float day = up < 0.0f ? 0.0f : (up > 1.0f ? 1.0f : up);
+        float warm = 1.0f - 0.6f * (1.0f - (up < 0.0f ? 0.0f : (up > 0.3f ? 1.0f : up / 0.3f)));
+        sun->intensity = m_sunIntensity * (0.02f + 0.98f * day);
+        sun->color = { 1.0f, 0.5f + 0.5f * warm, 0.25f + 0.75f * warm };
+    }
 
     XMMATRIX viewProj = cam->GetViewProjectionSpaceMatrix();   // unjittered
     XMStoreFloat4x4(&m_constants.invViewProj, XMMatrixInverse(nullptr, viewProj));

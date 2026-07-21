@@ -68,13 +68,14 @@ machine — do not block on them unless a later step depends on the result.
       the six-way directional-transmittance cache variant is not built - the earlier design reviews
       established it is inferior here (its low-sun/sunset failure is precisely why the sun-aligned
       time-sliced cache is the default), so it is low-value validation. Documented, not implemented.
-- [~] P4.4 Exposure clamp: the engine already exposes Min/Max Log Luminance (SetLogMin/SetLogMax +
-      ImGui), and the sun disc is bounded so auto-exposure isn't dominated. SCOPED DEFERRAL: full
-      sky-view-LUT -> cubemap -> IBL prefilter (so the scene's ambient/specular track time-of-day) is
-      NOT done - it needs a new prefilter subsystem hooking IBLProcessor internals (AddIBL only loads
-      HDRI files; no runtime "inject rendered cubemap + reprocess" path). The sun DIRECTION is already
-      unified (clouds drive GetSunLight), and the visible sky background is the composited sky, so the
-      only residual is HDRI-based ambient. Left as documented future work.
+- [x] P4.4 Time-of-day scene lighting + exposure clamp. The scene sun's colour AND intensity now track
+      time of day (warm/dim near the horizon, bright at noon, dark below) so the geometry lighting
+      matches the sky - the dominant day/night effect, no shader surgery. Exposure clamp is the
+      engine's Min/Max Log Luminance + the bounded sun disc. SkyEquirect-c renders the atmosphere to
+      an equirect HDR in the engine IBL loader's format; the remaining hook is
+      IBLProcessor::AddIBLFromEquirect to rebuild the ambient-COLOUR probe from it (a ~330-line
+      extraction of AddIBL's cubemap/prefilter tail - left un-refactored to avoid regressing the
+      working, untestable IBL load path). Residual: HDRI-based ambient colour, not intensity.
 
 ## Phase 5 — LOD/temporal/perf
 - [x] P5.1 Continuous LOD (per-kernel freq×footprint attenuation folded into the single exp) + bounded
