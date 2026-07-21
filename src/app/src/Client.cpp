@@ -804,6 +804,7 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                     ImGui::SliderFloat("Mask Aggressiveness", &Awesome.GetClouds()->m_maskAggressiveness, 1.0f, 8.0f);
                     ImGui::SliderFloat("Survival Floor", &Awesome.GetClouds()->m_survivalFloor, 0.01f, 0.5f);
                     ImGui::SliderFloat("Temporal Blend", &Awesome.GetClouds()->m_temporalAlpha, 0.02f, 1.0f);
+                    ImGui::Checkbox("Accumulate (static cam)", &Awesome.GetClouds()->m_accumulate);
 
                     {
                         Awesome::CloudGenerator* gen = Awesome.GetClouds()->GetGenerator();

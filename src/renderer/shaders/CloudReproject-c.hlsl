@@ -45,7 +45,22 @@ COMPUTE_MAIN
 
     float alpha = g_temporal.x;   // alphaBase
     bool disocc = false;
-    if (any(prevUV < 0.0) || any(prevUV > 1.0))
+    bool accumulate = g_temporal.w > 0.5;   // static-camera progressive accumulation (P4.1)
+    if (accumulate)
+    {
+        // Unbiased running average with no clamp; the CPU resets the count on any
+        // camera/sun/param change, so this converges the lighting for validation.
+        float nprev = g_temporal.z;
+        alpha = (nprev < 0.5) ? 1.0 : 1.0 / (nprev + 1.0);
+        if (any(prevUV < 0.0) || any(prevUV > 1.0))
+            alpha = 1.0;
+        else
+        {
+            float4 hist = g_histPrev.SampleLevel(linearClampSampler, prevUV, 0);
+            cur = lerp(hist, cur, alpha);
+        }
+    }
+    else if (any(prevUV < 0.0) || any(prevUV > 1.0))
     {
         alpha = 1.0;              // disoccluded (off-screen last frame)
         disocc = true;

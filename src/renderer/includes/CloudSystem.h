@@ -100,6 +100,7 @@ namespace Awesome
         float m_maskAggressiveness = 1.0f;   // 1 = masking off; higher = more culling
         float m_survivalFloor = 0.05f;
         float m_temporalAlpha = 0.1f;         // temporal blend (lower = steadier, slower)
+        bool  m_accumulate = false;           // static-camera progressive accumulation (validation)
         uint32 m_debugView = 0;
         uint32 m_lightMode = 0;
         uint32 m_traversalMode = 0;   // 0 tiled (primary), 3 brute (A/B)
@@ -140,6 +141,10 @@ namespace Awesome
         uint32 m_compositePSO = (uint32)-1;
         float m_timeSeconds = 0.0f;
         float m_lastSunY = -999.0f;            // sky-dirty tracking
+        // Accumulation change-detection state.
+        DirectX::XMFLOAT4X4 m_prevViewProjForAccum = {};
+        float m_prevTimeOfDay = -999.0f;
+        uint32 m_accumCount = 0;
 
         // Persistent descriptor blocks from the Assets section: [frameIndex][pingpong].
         std::vector<DescriptorHandle> m_srvBlocks[c_frameBufferCount][2];

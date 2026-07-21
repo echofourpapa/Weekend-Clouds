@@ -332,6 +332,17 @@ void CloudSystem::UpdateConstants(float delta)
     XMStoreFloat4x4(&m_constants.invViewProj, XMMatrixInverse(nullptr, viewProj));
     XMStoreFloat4x4(&m_constants.prevViewProj, cam->prevViewProjMatrix);
 
+    // Accumulation change-detection: reset the running average whenever the
+    // camera or time of day moves (P4.1 validation mode).
+    {
+        XMFLOAT4X4 vp; XMStoreFloat4x4(&vp, viewProj);
+        bool changed = memcmp(&vp, &m_prevViewProjForAccum, sizeof(vp)) != 0
+                    || m_timeOfDay != m_prevTimeOfDay;
+        m_accumCount = (changed || !m_accumulate) ? 0 : (m_accumCount + 1);
+        m_prevViewProjForAccum = vp;
+        m_prevTimeOfDay = m_timeOfDay;
+    }
+
     m_constants.camPosWS = { cam->transform.position.x, cam->transform.position.y, cam->transform.position.z, m_timeSeconds };
     m_constants.sunDirWS = { sd.x, sd.y, sd.z, 0.004625f };
     float sunUp = sd.y * 4.0f; sunUp = sunUp < 0.0f ? 0.0f : (sunUp > 1.0f ? 1.0f : sunUp);
@@ -362,8 +373,8 @@ void CloudSystem::UpdateConstants(float delta)
     // lodParams: footprintScale (per trace pixel), lodSkipThreshold, maskAggressiveness, survivalFloor
     m_constants.lodParams = { 2.0f * tanf(cam->verticalFOV * 0.5f) / th, 0.02f, m_maskAggressiveness, m_survivalFloor };
     m_constants.erosionParams = { 0.7f, 4.0f, 20.0f, 2000.0f };
-    // temporal: alphaBase, disocclusionTauDelta, accumCount(unused), histBlendMax
-    m_constants.temporal = { m_temporalAlpha, 0.15f, 0.0f, 1.0f };
+    // temporal: alphaBase, disocclusionTauDelta, accumCount, accumulateEnabled
+    m_constants.temporal = { m_temporalAlpha, 0.15f, (float)m_accumCount, m_accumulate ? 1.0f : 0.0f };
     uint32 macroCount = m_generator->GetMacroCount();
     m_constants.counts[0] = macroCount;
     m_constants.counts[1] = m_generator->GetKernelCount();
