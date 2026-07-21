@@ -6,7 +6,7 @@
 
 #include "CloudCommon.hlsli"
 
-Texture2D<float4>   g_scatter   : register(t11);   // current (rgb inscatter, a T)
+Texture2D<float4>   g_scatter   : register(t10);   // denoised current (rgb inscatter, a T)
 Texture2D<float>    g_cloudDepth : register(t12);   // current reservoir-winner distance
 Texture2D<float4>   g_histPrev  : register(t9);    // previous accumulated result
 RWTexture2D<float4> g_histCur   : register(u10);   // new accumulated result
