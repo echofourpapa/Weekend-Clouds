@@ -13,6 +13,30 @@ Texture2D<float>    g_sceneDepth : register(t6);
 RWTexture2D<float4> g_scatter    : register(u7);
 RWTexture2D<float>  g_cloudDepth : register(u8);
 
+// Exact sun optical depth from a scatter point: a second inline RayQuery toward
+// the sun accumulating macro optical depth (the reference the field cache
+// approximates). RT-only; used for lightMode REFERENCE and the diff debug view.
+float SunTauReference(float3 ws)
+{
+    float3 sunDir = normalize(g_sunDirWS.xyz);
+    RayDesc r;
+    r.Origin = ws; r.Direction = sunDir; r.TMin = 1.0; r.TMax = 1.0e6;
+    RayQuery<RAY_FLAG_NONE> sq;
+    sq.TraceRayInline(g_tlas, RAY_FLAG_NONE, 0xFF, r);
+    float t = 0.0;
+    uint g = 0;
+    while (sq.Proceed() && g < 2048u)
+    {
+        g++;
+        if (sq.CandidateType() != CANDIDATE_PROCEDURAL_PRIMITIVE) continue;
+        CloudMacro m = g_macros[sq.CandidatePrimitiveIndex()];
+        CloudKernel k = KernelFromMacro(m);
+        KernelRayTerms kt = KernelRaySetup(k, ws, sunDir);
+        t += max(TauKernelClamped(k.amplitude, kt, 0.0, 0.0, 1.0e6), 0.0);
+    }
+    return t;
+}
+
 COMPUTE_MAIN
 {
     uint2 px = IN.DispatchThreadID.xy;
@@ -68,11 +92,22 @@ COMPUTE_MAIN
     float T = exp(-tauC);
     float cosVS = dot(dir, normalize(g_sunDirWS.xyz));
     float powder = 1.0 - exp(-2.0 * tauC);
-    float3 sunLit;
-    if (g_mode.y == CLOUD_LIGHT_SUNCACHE)
-        sunLit = CloudSunScatter(SampleSunTau(g_lightCache, o + dir * bestT), cosVS) * powder;
-    else
-        sunLit = g_sunRadiance.rgb * PhaseDualHG(cosVS) * powder * lerp(0.25, 1.0, saturate(bestHeight));
+    float3 scatterWS = o + dir * bestT;
+
+    // Baked-vs-reference lighting diff (debug 6): cache tau vs exact RayQuery tau.
+    if (g_mode.x == CLOUD_DBG_LIGHT_DIFF)
+    {
+        float tc = SampleSunTau(g_lightCache, scatterWS);
+        float tr = SunTauReference(scatterWS);
+        g_scatter[px] = float4((abs(tc - tr) * 0.5).xxx, T);
+        g_cloudDepth[px] = (T > 0.995) ? 0.0 : bestT;
+        return;
+    }
+
+    float tauSun;
+    if (g_mode.y == CLOUD_LIGHT_REFERENCE)   tauSun = SunTauReference(scatterWS);   // exact
+    else                                     tauSun = SampleSunTau(g_lightCache, scatterWS);
+    float3 sunLit = CloudSunScatter(tauSun, cosVS) * powder;
     float3 skyAmb = float3(0.30, 0.45, 0.65) * g_ambientParams.x * (0.4 + 0.6 * saturate(bestHeight));
 
     g_scatter[px] = float4((1.0 - T) * (sunLit + skyAmb), T);

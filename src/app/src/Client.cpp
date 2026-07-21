@@ -784,12 +784,15 @@ void ClientLoop(Awesome::AwesomeGraphics& Awesome)
                             Awesome.GetClouds()->m_traversalMode = (uint32)trav;
                     }
                     {
-                        // 0 = sun-transmittance field cache (real self-shadowing),
-                        // 3 = height/powder heuristic fallback.
-                        const char* litItems[] = { "Sun Cache", "Heuristic" };
-                        int lit = Awesome.GetClouds()->m_lightMode == 0 ? 0 : 1;
+                        // 0 = field cache, 2 = ray-traced reference (RQ traversal only),
+                        // 3 = height/powder heuristic.
+                        const char* litItems[] = { "Sun Cache", "Ray-traced Ref", "Heuristic" };
+                        uint32 lm = Awesome.GetClouds()->m_lightMode;
+                        int lit = (lm == 0) ? 0 : (lm == 2 ? 1 : 2);
                         if (ImGui::Combo("Lighting", &lit, litItems, IM_ARRAYSIZE(litItems)))
-                            Awesome.GetClouds()->m_lightMode = (lit == 0) ? 0u : 3u;
+                            Awesome.GetClouds()->m_lightMode = (lit == 0) ? 0u : (lit == 1 ? 2u : 3u);
+                        if (lit == 1)
+                            ImGui::TextDisabled("(needs Traversal = RQ Macro)");
                     }
                     {
                         const char* dbgItems[] = { "Off", "Heatmap", "Freq Bands", "Transmittance",

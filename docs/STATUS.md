@@ -62,7 +62,12 @@ machine — do not block on them unless a later step depends on the result.
       Trace samples it trilinearly at o+bestT*dir (macro space) → Wrenninge multi-octave scatter.
       Cache box: cubic 256 m voxels centred on camera-in-macro-space, XZ snapped. lightMode!=0 keeps
       the P4.0 height heuristic as fallback.
-- [ ] P4.3 Six-way variant + RT-reference mode (needs RTScene from P2.3) + baked-vs-reference diff
+- [~] P4.3 RT-reference lighting (lightMode 2, RQ traversal): a second inline RayQuery toward the sun
+      at the scatter point gives exact sun optical depth - the reference the field cache approximates.
+      Baked-vs-reference diff view (debug 6) shows |cache tau - reference tau|. SCOPED DEFERRAL:
+      the six-way directional-transmittance cache variant is not built - the earlier design reviews
+      established it is inferior here (its low-sun/sunset failure is precisely why the sun-aligned
+      time-sliced cache is the default), so it is low-value validation. Documented, not implemented.
 - [~] P4.4 Exposure clamp: the engine already exposes Min/Max Log Luminance (SetLogMin/SetLogMax +
       ImGui), and the sun disc is bounded so auto-exposure isn't dominated. SCOPED DEFERRAL: full
       sky-view-LUT -> cubemap -> IBL prefilter (so the scene's ambient/specular track time-of-day) is
