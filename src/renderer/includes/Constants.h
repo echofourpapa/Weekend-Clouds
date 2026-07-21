@@ -47,6 +47,8 @@ namespace Awesome
     struct TAAConstants
     {
         XMFLOAT4 screenSize;
+        XMFLOAT4X4 invViewProj;    // current (unjittered) — for sky-pixel reprojection
+        XMFLOAT4X4 prevViewProj;   // previous (unjittered)
     };
 
     struct LightCullConstants

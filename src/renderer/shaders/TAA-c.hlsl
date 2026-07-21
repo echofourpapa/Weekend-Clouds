@@ -12,6 +12,8 @@ RWTexture2D<float4> ColorOut : register(u0);
 cbuffer ConstantBuffer : register(b0)
 {
 	float4 screenSize;
+	row_major float4x4 invViewProj;    // current, unjittered (sky reprojection)
+	row_major float4x4 prevViewProj;   // previous, unjittered
 };
 
 // --- Utils ---
@@ -136,8 +138,20 @@ COMPUTE_MAIN
     // 1. Velocity Dilation
     float2 velocityUV = GetClosestDepthUV(UV);
     float2 velocity = MotionTex.SampleLevel(linearClampSampler, velocityUV, 0).zw;
-    
+
     float2 prevUV = UV + velocity;
+
+    // Sky/cloud pixels (reverse-Z far == depth 0) have no geometry motion vector;
+    // reproject them by camera motion. The far-plane homogeneous point has w~0 so
+    // only rotation matters (translation vanishes at infinity) — no camPos needed.
+    if (DepthTex.SampleLevel(linearClampSampler, UV, 0) <= 0.0)
+    {
+        float2 ndc = float2(UV.x * 2.0 - 1.0, 1.0 - UV.y * 2.0);
+        float4 wf = mul(float4(ndc, 0.0, 1.0), invViewProj);
+        float4 pc = mul(wf, prevViewProj);
+        float2 pndc = pc.xy / pc.w;
+        prevUV = float2(pndc.x * 0.5 + 0.5, 0.5 - pndc.y * 0.5);
+    }
 
     // 2. Sample History (Sanitized)
     bool isOffScreen = any(prevUV < 0.0) || any(prevUV > 1.0);

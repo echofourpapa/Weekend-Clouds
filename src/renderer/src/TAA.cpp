@@ -1,5 +1,6 @@
 #include "TAA.h"
 #include "Util.h"
+#include "Scene.h"
 #include "Compute.h"
 #include "Material.h"
 #include "Deferred.h"
@@ -138,11 +139,18 @@ void TemporalAntiAliasing::Render(float delta)
         m_Awesome->GetComputeSystem()->SetPSO(m_taaComputePSO);
 
         TAAConstants constants = {};
-        constants.screenSize = { 
-            1.0f / float(m_Awesome->GetWidth()), 
+        constants.screenSize = {
+            1.0f / float(m_Awesome->GetWidth()),
             1.0f/ float(m_Awesome->GetHeight()),
             float(m_Awesome->GetWidth()),
             float(m_Awesome->GetHeight()) };
+
+        // Sky pixels have no geometry motion vector; give TAA the matrices to
+        // reproject depth==0 pixels by camera motion (P5.3).
+        Camera* taaCam = m_Awesome->GetCurrentScene()->GetCamera();
+        XMMATRIX vp = taaCam->GetViewProjectionSpaceMatrix();
+        XMStoreFloat4x4(&constants.invViewProj, XMMatrixInverse(nullptr, vp));
+        XMStoreFloat4x4(&constants.prevViewProj, taaCam->prevViewProjMatrix);
 
         void* mapped = nullptr;
         m_taaConstantBuffer->resource->Map(0, nullptr, &mapped);
